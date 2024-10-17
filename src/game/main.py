@@ -33,7 +33,7 @@ class Player(pygame.sprite.Sprite):
         self.rect.y = posY
         
     # -----------------------------------------------------------
-	# update player rectangle
+    # update player rectangle
     def update(self, keys):
         if keys[pygame.K_UP]:
             self.rect.y -=5
@@ -91,17 +91,17 @@ while running:
     imgRGB = cv2.cvtColor(cameraFrame, cv2.COLOR_BGR2RGB)
     # image needs to be rotated for pygame
     imgRGB = np.rot90(imgRGB)
-	# convert image to pygame and visualize
+    # convert image to pygame and visualize
     gameFrame = pygame.surfarray.make_surface(imgRGB).convert()    
     screen.blit(gameFrame, (0, 0))
     
 
-	# -- update & draw object on screen
+    # -- update & draw object on screen
     player.update(pygame.key.get_pressed())
     screen.blit(player.surf, player.rect)
 
 
-	# -- add Text on screen (e.g. score)
+    # -- add Text on screen (e.g. score)
     textFont = pygame.font.SysFont("arial", 26)
     textExample = textFont.render(f'Score: {gameScore}', True, (255, 0, 0))
     screen.blit(textExample, (20, 20))
