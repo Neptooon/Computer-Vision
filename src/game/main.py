@@ -120,13 +120,19 @@ def main():
 
         # Früchte und Bomben generator
         if random.randint(1, 100) > 98:
+            depth = random.uniform(0.75, 1.5)
+
             new_fruit = Objects.Fruit(random.randint(0, SCREEN_WIDTH), 0,
-                                      random.choice(list(Objects.FRUIT_SPRITES.keys())), random.uniform(0.1, 10.0), random.randint(5, 20))
+                                      random.choice(list(Objects.FRUIT_SPRITES.keys())),
+                                      random.uniform(0.1, 10.0), random.randint(5, 20), depth=depth)
             fruits.add(new_fruit)
 
         if random.randint(1, 200) > 199:
+            depth = random.uniform(0.75, 1.5)
             new_bomb = Objects.Bomb(random.randint(0, SCREEN_WIDTH), 0,
-                                    random.choice(list(Objects.BOMB_SPRITES.keys())), player1, random.uniform(0.1, 0.9))
+                                    random.choice(list(Objects.BOMB_SPRITES.keys())),
+                                    player1, random.uniform(0.1, 0.5), depth=depth)
+
             bombs.add(new_bomb)
 
         # Früchte und Bomben bewegen updaten etc.
