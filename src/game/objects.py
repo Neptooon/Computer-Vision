@@ -52,7 +52,7 @@ class Fruit(pygame.sprite.Sprite):
         self.render_multiplier()
 
     def update(self):
-        fall_speed = 5 / self.depth
+        fall_speed = 4 / self.depth
         self.rect.y += fall_speed
 
         self.multiplier += (self.rect.y / SCREEN_HEIGHT) * 0.01
@@ -96,7 +96,7 @@ class Bomb(pygame.sprite.Sprite):
         self.render_multiplier()
 
     def update(self):
-        fall_speed = 5 / self.depth
+        fall_speed = 4 / self.depth
         self.rect.y += fall_speed
 
         self.multiplier += (self.rect.y / SCREEN_HEIGHT) * 0.04  # growth rate
@@ -107,7 +107,7 @@ class Bomb(pygame.sprite.Sprite):
             self.player.health -= 1
             if self.player.score - int(self.base_value * self.multiplier) >= 0:
                 self.player.score -= int(self.base_value * self.multiplier)
-            else:
+            else: # TODO ERSETZEN MIT GAME OVER !
                 self.player.score = 0
 
     def render_multiplier(self):
