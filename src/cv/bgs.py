@@ -1,7 +1,7 @@
 import cv2 as cv
 import numpy as np
 
-
+# https://docs.opencv.org/3.4/d1/dc5/tutorial_background_subtraction.html
 def bgs():
 
     def labelFrame(frame, name):
@@ -24,7 +24,7 @@ def bgs():
     target_width = 1180
 
     # Video laden
-    cap = cv.VideoCapture('../../assets/videos/LL-Default-Swap-Hell.mov')
+    cap = cv.VideoCapture('../../assets/videos/LL-Tafel+2J+Bin-Pulli-Kapuze-Hell.mov')
 
     # BG-methoden
     MOG2 = cv.createBackgroundSubtractorMOG2(detectShadows=True)
@@ -67,7 +67,7 @@ def bgs():
         # Ergebnis der BGS
         cv.imshow('', resized_frame)
 
-        keyboard = cv.waitKey(30)
+        keyboard = cv.waitKey(1)
         if keyboard == ord('q') or keyboard == 27:  # 'q' oder Esc
             break
 
