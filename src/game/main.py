@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 import pygame
 import generator as Generator
+import overlay as Overlay
 
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
@@ -78,29 +79,45 @@ cap = cv2.VideoCapture(0)
 # set width & height to screen size
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, screen.get_width())
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, screen.get_height())
+start_time = None
 
-HEART = pygame.image.load('../../assets/sprites/heart.png')
+
+def start_game():
+    global start_time
+
+    start_time = pygame.time.get_ticks()
 
 
-def render_score(players):
-    for player in players:
-        font = pygame.font.SysFont("arial", 26)
-        if player.name == 'Player1':
-            score_text = font.render(f'{player.name}   Score: {player.score}', True, (0, 0, 255))
-            # Score und Herzen für Spieler 1 (oben links)
-            screen.blit(score_text, (20, 20))
-            for i in range(player.health):
-                screen.blit(pygame.transform.scale(HEART, (60, 60)), (20 + i * 35, 50))
+def stop_game():
+    game_over()
 
-        else:
-            score_text = font.render(f'{player.name}   Score: {player.score}', True, (255, 0, 0))
-            # Score und Herzen für Spieler 2 (oben rechts)
-            screen.blit(score_text, (SCREEN_WIDTH - score_text.get_width() - 20, 20))
-            for i in range(player.health):
-                screen.blit(pygame.transform.scale(HEART, (60, 60)), (SCREEN_WIDTH - 40 - (i + 1) * 35, 50))
+    waiting = True
+    while waiting:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit() # Quit
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                if event.key == pygame.K_r:
+                    main()  # Restart
+                    waiting = False
+
+
+def game_over():
+    font = pygame.font.SysFont("arial", 60)
+    game_over_text = font.render("GAME OVER", True, (255, 0, 0))
+    restart_text = font.render("ESC = Exit R = Restart", True, (255, 255, 255))
+    screen.blit(game_over_text, (SCREEN_WIDTH // 2 - game_over_text.get_width() // 2, SCREEN_HEIGHT // 2 - 100))
+    screen.blit(restart_text, (SCREEN_WIDTH // 2 - restart_text.get_width() // 2, SCREEN_HEIGHT // 2 + 50))
+    pygame.display.update()
 
 
 def main():
+
+    global start_time
+    start_game()
+
     player1 = Player(100, SCREEN_HEIGHT // 2, (0, 0, 255),
                      'Player1')  # TODO Player Parameter Egal weil ja detektion außer name
     player2 = Player(SCREEN_WIDTH - 100, SCREEN_HEIGHT // 2, (255, 0, 0), 'Player2')
@@ -168,13 +185,19 @@ def main():
                 if bomb.player == player and player.rect.colliderect(bomb.rect):
                     bomb.player.catch_bomb(bomb)
 
+        for player in players:
+            if player.health <= 0:
+                stop_game()
+
         # Früchte und Bomben zeichnen
         fruits.draw(screen)
         bombs.draw(screen)
         players.draw(screen)
 
         # render score & hp
-        render_score(players)
+        Overlay.draw_score(screen, players)
+        Overlay.draw_hp(screen, players)
+        Overlay.draw_game_time(screen, start_time)
 
         # update  screen
         pygame.display.update()
@@ -190,7 +213,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# TODO Game Over Screen
-# TODO Main Menue
-# TODO Bomben Spielerspezifisch

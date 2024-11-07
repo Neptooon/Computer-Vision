@@ -107,8 +107,6 @@ class Bomb(pygame.sprite.Sprite):
             self.player.health -= 1
             if self.player.score - int(self.base_value * self.multiplier) >= 0:
                 self.player.score -= int(self.base_value * self.multiplier)
-            else: # TODO ERSETZEN MIT GAME OVER !
-                self.player.score = 0
 
     def render_multiplier(self):
 
