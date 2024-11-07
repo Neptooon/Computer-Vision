@@ -100,8 +100,8 @@ def render_score(players):
             # Score und Herzen für Spieler 2 (oben rechts)
             screen.blit(score_text, (SCREEN_WIDTH - score_text.get_width() - 20, 20))
             for i in range(player.health):
-                screen.blit(pygame.transform.scale(HEART, (60, 60)), (SCREEN_WIDTH - 20 - (i + 1) * 35, 50))
-
+                screen.blit(pygame.transform.scale(HEART, (60, 60)), (SCREEN_WIDTH - 40 - (i + 1) * 35, 50))
+                # 40
 
 def main():
     player1 = Player(100, SCREEN_HEIGHT // 2, (0, 0, 255), 'Player1') # TODO Player Parameter Egal weil ja detektion außer name
