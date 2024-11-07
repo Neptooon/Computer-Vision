@@ -24,22 +24,54 @@ def bgs():
     target_width = 1180
 
     # Video laden
-    cap = cv.VideoCapture('../../assets/videos/LL-Tafel+2J+Bin-Pulli-Kapuze-Hell.mov')
+    cap = cv.VideoCapture('../../assets/videos/Cross-Default-Pulli-Hell.mov')
 
     # BG-methoden
     MOG2 = cv.createBackgroundSubtractorMOG2(detectShadows=True)
     CNT = cv.bgsegm.createBackgroundSubtractorCNT()
-    KNN = cv.createBackgroundSubtractorKNN()
+    KNN = cv.createBackgroundSubtractorKNN(detectShadows=True)
+
+    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (8, 8))
 
     while True:
         ret, frame = cap.read()
         if frame is None:
             break
 
+        frame = cv.GaussianBlur(frame, (5, 5), 0)
+
         # BGS anwenden
         fgmask = MOG2.apply(frame)
         fgmask2 = CNT.apply(frame)
         fgmask3 = KNN.apply(frame)
+
+
+        # Schatten entfernen
+        fgmask = cv.threshold(fgmask, 254, 255, cv.THRESH_BINARY)[1]
+
+        fgmask = cv.morphologyEx(fgmask, cv.MORPH_OPEN, kernel)  # Rauschen entfernen
+        fgmask = cv.morphologyEx(fgmask, cv.MORPH_CLOSE, kernel)  # Löcher füllen
+
+        # Median-Filter zur weiteren Rauschreduzierung
+        fgmask = cv.medianBlur(fgmask, 5)
+
+        # Schatten entfernen
+        fgmask2 = cv.threshold(fgmask2, 254, 255, cv.THRESH_BINARY)[1]
+        fgmask2 = cv.morphologyEx(fgmask2, cv.MORPH_OPEN, kernel)  # Rauschen entfernen
+        fgmask2 = cv.morphologyEx(fgmask2, cv.MORPH_CLOSE, kernel)  # Löcher füllen
+
+        # Median-Filter zur weiteren Rauschreduzierung
+        fgmask2 = cv.medianBlur(fgmask2, 5)
+
+        # Schatten entfernen
+        fgmask3 = cv.threshold(fgmask3, 254, 255, cv.THRESH_BINARY)[1]
+        fgmask3 = cv.morphologyEx(fgmask3, cv.MORPH_OPEN, kernel)  # Rauschen entfernen
+        fgmask3 = cv.morphologyEx(fgmask3, cv.MORPH_CLOSE, kernel)  # Löcher füllen
+
+        # Median-Filter zur weiteren Rauschreduzierung
+        fgmask3 = cv.medianBlur(fgmask3, 5)
+
+        #fgmask2 = cv.bitwise_and(fgmask2, fgmask)
 
         # Masken in BGR umwandeln, weil sonst die Darstellung von Farb- und Graubild von den Channeln her nicht passt
         fgmask_bgr = cv.cvtColor(fgmask, cv.COLOR_GRAY2BGR)
