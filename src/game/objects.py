@@ -53,7 +53,7 @@ class Fruit(pygame.sprite.Sprite):
 
     def update(self):
         fall_speed = 4 / self.depth
-        self.rect.y += fall_speed
+        self.rect.y += fall_speed - 1
 
         self.multiplier += (self.rect.y / SCREEN_HEIGHT) * 0.01
         self.render_multiplier()
@@ -97,7 +97,7 @@ class Bomb(pygame.sprite.Sprite):
 
     def update(self):
         fall_speed = 4 / self.depth
-        self.rect.y += fall_speed
+        self.rect.y += fall_speed - 1
 
         self.multiplier += (self.rect.y / SCREEN_HEIGHT) * 0.04  # growth rate
         self.render_multiplier()

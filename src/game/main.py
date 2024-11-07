@@ -10,15 +10,13 @@ import random
 import cv2
 import numpy as np
 import pygame
-import objects as Objects
+import generator as Generator
 
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 SCREEN = [SCREEN_WIDTH, SCREEN_HEIGHT]
 PLAYER_HEALTH = 4
 INIT_SCORE = 0
-
-HEART = pygame.image.load('../../assets/sprites/heart.png')
 
 
 # --------------------------------------------------------------------------
@@ -81,36 +79,43 @@ cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, screen.get_width())
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, screen.get_height())
 
+HEART = pygame.image.load('../../assets/sprites/heart.png')
 
-# init player
-# player = Player(screen.get_width()/2, screen.get_height()/2)
 
-# -------------
 def render_score(players):
     for player in players:
         font = pygame.font.SysFont("arial", 26)
-        score_text = font.render(f'{player.name}   Score: {player.score}', True, (0, 0, 0))
         if player.name == 'Player1':
+            score_text = font.render(f'{player.name}   Score: {player.score}', True, (0, 0, 255))
             # Score und Herzen für Spieler 1 (oben links)
             screen.blit(score_text, (20, 20))
             for i in range(player.health):
                 screen.blit(pygame.transform.scale(HEART, (60, 60)), (20 + i * 35, 50))
 
         else:
+            score_text = font.render(f'{player.name}   Score: {player.score}', True, (255, 0, 0))
             # Score und Herzen für Spieler 2 (oben rechts)
             screen.blit(score_text, (SCREEN_WIDTH - score_text.get_width() - 20, 20))
             for i in range(player.health):
                 screen.blit(pygame.transform.scale(HEART, (60, 60)), (SCREEN_WIDTH - 40 - (i + 1) * 35, 50))
-                # 40
+
 
 def main():
-    player1 = Player(100, SCREEN_HEIGHT // 2, (0, 0, 255), 'Player1') # TODO Player Parameter Egal weil ja detektion außer name
+    player1 = Player(100, SCREEN_HEIGHT // 2, (0, 0, 255),
+                     'Player1')  # TODO Player Parameter Egal weil ja detektion außer name
     player2 = Player(SCREEN_WIDTH - 100, SCREEN_HEIGHT // 2, (255, 0, 0), 'Player2')
 
     players = pygame.sprite.Group(player1, player2)
 
     fruits = pygame.sprite.Group()
     bombs = pygame.sprite.Group()
+
+    generator = Generator.ObjectGenerator(
+        initial_fruit_interval=4.5,
+        initial_bomb_interval=5.5,
+        screen_width=SCREEN_WIDTH,
+        screen_height=SCREEN_HEIGHT
+    )
 
     running = True
     while running:
@@ -139,20 +144,12 @@ def main():
             player.update(keys)
 
         # Früchte und Bomben generator
-        if random.randint(1, 100) > 98:
-            depth = random.uniform(0.6, 0.9)
-
-            new_fruit = Objects.Fruit(random.randint(0, SCREEN_WIDTH), 0,
-                                      random.choice(list(Objects.FRUIT_SPRITES.keys())),
-                                      random.uniform(1.0, 10.0), random.randint(5, 20), depth=depth)
+        new_fruit = generator.generate_fruit()
+        if new_fruit:
             fruits.add(new_fruit)
 
-        if random.randint(1, 200) > 199:
-            depth = random.uniform(0.5, 0.7)
-            new_bomb = Objects.Bomb(random.randint(0, SCREEN_WIDTH), 0,
-                                    random.choice(list(Objects.BOMB_SPRITES.keys())),
-                                    player2, random.uniform(5, 20), random.uniform(2.0, 10.0), depth=depth)
-
+        new_bomb = generator.generate_bomb(random.choice(list(players)))
+        if new_bomb:
             bombs.add(new_bomb)
 
         # Früchte und Bomben bewegen updaten etc.
@@ -168,7 +165,7 @@ def main():
         # Bombe und Spieler
         for bomb in bombs:
             for player in players:
-                if player.rect.colliderect(bomb.rect):
+                if bomb.player == player and player.rect.colliderect(bomb.rect):
                     bomb.player.catch_bomb(bomb)
 
         # Früchte und Bomben zeichnen
@@ -193,7 +190,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 # TODO Game Over Screen
 # TODO Main Menue
