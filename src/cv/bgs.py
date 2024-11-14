@@ -4,6 +4,7 @@ import numpy as np
 # https://docs.opencv.org/3.4/d1/dc5/tutorial_background_subtraction.html
 def bgs():
 
+    # Setzt Namenslabel für einen Frame sowie den aktuellen Frame
     def labelFrame(frame, name):
         # Textparameter
         font = cv.FONT_HERSHEY_SIMPLEX
@@ -28,7 +29,6 @@ def bgs():
 
     # BGS-methoden mit Parametrisierung
     MOG2 = cv.createBackgroundSubtractorMOG2(detectShadows=True, varThreshold=32)
-
     CNT = cv.bgsegm.createBackgroundSubtractorCNT()
     KNN = cv.createBackgroundSubtractorKNN(detectShadows=True, dist2Threshold=1000)
 
@@ -62,7 +62,6 @@ def bgs():
         fgmask2 = cv.medianBlur(fgmask2, 3)
 
         # ...
-        fgmask3 = cv.threshold(fgmask3, 254, 255, cv.THRESH_BINARY)[1]
         fgmask3 = cv.morphologyEx(fgmask3, cv.MORPH_OPEN, kernel)
         fgmask3 = cv.morphologyEx(fgmask3, cv.MORPH_CLOSE, kernel)
         fgmask3 = cv.medianBlur(fgmask3, 3)
