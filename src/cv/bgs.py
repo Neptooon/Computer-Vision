@@ -1,6 +1,7 @@
 import cv2 as cv
 import numpy as np
 
+
 # https://docs.opencv.org/3.4/d1/dc5/tutorial_background_subtraction.html
 def bgs():
 
@@ -24,10 +25,13 @@ def bgs():
     target_width = 1180
 
     # Video laden
-    cap = cv.VideoCapture('../../assets/videos/LL-Default-Pulli-Hell-LR.mov')
+    cap = cv.VideoCapture('../../assets/videos/LL-Default-Pulli-Jogging-Hell-RL.mov')
 
     # BGS-methoden mit Parametrisierung
-    MOG2 = cv.createBackgroundSubtractorMOG2(detectShadows=True, varThreshold=32)
+    MOG2 = cv.createBackgroundSubtractorMOG2(detectShadows=True, varThreshold=450)
+    MOG2.setBackgroundRatio(0.8)
+    MOG2.setShadowValue(255)
+    MOG2.setShadowThreshold(0.4)
 
     CNT = cv.bgsegm.createBackgroundSubtractorCNT()
     KNN = cv.createBackgroundSubtractorKNN(detectShadows=True, dist2Threshold=1000)
@@ -48,7 +52,7 @@ def bgs():
         fgmask3 = KNN.apply(frame)
 
         # Schatten von den Vordergrundmasken über Threshold entfernen
-        fgmask = cv.threshold(fgmask, 254, 255, cv.THRESH_BINARY)[1]
+        #fgmask = cv.threshold(fgmask, 254, 255, cv.THRESH_BINARY)[1]
         fgmask = cv.morphologyEx(fgmask, cv.MORPH_OPEN, kernel)  # Rauschen entfernen
         fgmask = cv.morphologyEx(fgmask, cv.MORPH_CLOSE, kernel)  # Löcher füllen
 
