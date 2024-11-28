@@ -1,9 +1,10 @@
-
 import cv2 as cv
 import numpy as np
 
-lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 10, 0.03))
-feature_params = dict(maxCorners=500, qualityLevel=0.3, minDistance=7, blockSize=7)
+lk_params = dict(winSize=(21, 21), maxLevel=3, criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 15, 0.03))
+feature_params = dict(maxCorners=500, qualityLevel=0.15, minDistance=5, blockSize=7)
+
+#quality level: Beeinflusst wie viele Ecken erkannt werden
 
 cap = cv.VideoCapture('../../assets/videos/Cross-Tafel+2J-3D-Mix-Hell-LD.mov')
 
@@ -15,10 +16,14 @@ bgs.setShadowValue(255)
 bgs.setShadowThreshold(0.3)
 
 tracks = []
-detect_interval = 5
+detect_interval = 10
+min_tracks = 10
+active_boxes = []
+tracking_failed = True
+
 track_len = 5
 prev_gray = None
-
+filtered_boxes = []
 hog = cv.HOGDescriptor()
 
 hog.setSVMDetector(cv.HOGDescriptor_getDefaultPeopleDetector())
@@ -45,26 +50,35 @@ while True:
 
     vis = frame.copy()
 
+
     # HOG-Detektion
     #if int(cap.get(cv.CAP_PROP_POS_FRAMES)) % detect_interval == 0:
 
-    frame_down_sample = cv.resize(frame, (frame.shape[1] // 2, frame.shape[0] // 2))
-    boxes, weights = hog.detectMultiScale(frame_down_sample, winStride=(8,8), padding=(4,4), scale=1.05)
-    print(boxes)
-    boxes *= 2  # Koordinaten der Boxen wieder upsamplen
-    n_box = []
+    frame_down_sample = cv.resize(frame, ((frame.shape[1] // 25) * 10, (frame.shape[0] // 25) * 10))
+    boxes, weights = hog.detectMultiScale(frame_down_sample, winStride=(8,8), padding=(8,8), scale=1.06)
+
+    boxes = np.divide(boxes * 25, 10).astype(int) # Koordinaten der Boxen wieder upsamplen
+    #print("BOX", boxes, "-----------------------", "WEIGHT", weights)
+
+    filtered_boxes.clear()
+
+    for (box, weight) in zip(boxes, weights):
+        #print(box, weight)
+        if weight > 0.5:
+            filtered_boxes.append(box)
 
     for ri, r in enumerate(boxes):
         for qi, q in enumerate(boxes):
             if ri != qi and inside(r, q):
 
-                print("Wahr", ri, r, "---------------------------", qi, q)
+                #print("Wahr", ri, r, "---------------------------", qi, q)
                 break
         else:
-            n_box.append(r)
+            filtered_boxes.append(r)
 
-    for (x, y, w, h) in boxes:  # Boxen drin die Überlappen
-        #if w * h > 10000:  # Fläche der Bounding Box in Pixel für die Detektion
+    for (x, y, w, h) in filtered_boxes:  # Boxen drin die Überlappen
+        if np.count_nonzero(fgmask[y:y+h, x:x+w]) > 10000 and w * h > 100000:  # Fläche der Bounding Box in Pixel für die Detektion
+
             cv.rectangle(vis, (x + int(0.15*w), y + int(0.05*h)), (x + w-int(0.15*w), y + h-int(0.05*h)), (255, 0, 0), 1)
             roi = frame_gray[y:y + h, x:x + w]  # ROI um Feature-Suche einzugrenzen
 
@@ -84,14 +98,20 @@ while True:
 
     if len(tracks) > 0:
         p0 = np.float32([tr[-1] for tr in tracks]).reshape(-1, 1, 2)
-        p1, st, err = cv.calcOpticalFlowPyrLK(prev_gray, frame_gray, p0, None, **lk_params)
-        p0r, st, err = cv.calcOpticalFlowPyrLK(frame_gray, prev_gray, p1, None, **lk_params)
 
+        p1, st, err = cv.calcOpticalFlowPyrLK(prev_gray, frame_gray, p0, None, **lk_params)
+        p0r, st2, err2 = cv.calcOpticalFlowPyrLK(frame_gray, prev_gray, p1, None, **lk_params)
+
+        print(p1)
+        new = p1[st == 1]
+        #print(p1.shape[0] == new.shape[0])
         d = abs(p0 - p0r).reshape(-1, 2).max(-1)
         good = d < 1
         new_tracks = []
         for tr, (x, y), good_flag in zip(tracks, p1.reshape(-1, 2), good):
-            if not good_flag:
+            if y + 5 > frame.shape[0] or x + 5 > frame.shape[1]:
+                continue
+            if not good_flag or np.all(fgmask[int(y): int(y) + 5, int(x): int(x) + 5] == 0):
                 continue
             tr.append((x, y))
             if len(tr) > track_len:
