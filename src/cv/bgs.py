@@ -1,155 +1,111 @@
 import cv2 as cv
 import numpy as np
 
+# max_point_loss = 10  # Mindestanzahl von Punkten für das Tracking
+lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 10, 0.03))
+feature_params = dict(maxCorners=5000, qualityLevel=0.3, minDistance=7, blockSize=7)
 
-# https://docs.opencv.org/3.4/d1/dc5/tutorial_background_subtraction.html
-def bgs():
+cap = cv.VideoCapture('../../assets/videos/Cross-Tafel+2J-3D-Mix-Hell-LD.mov')
 
-    # Setzt Namenslabel für einen Frame sowie den aktuellen Frame
-    def labelFrame(frame, name):
-        # Textparameter
-        font = cv.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.8
-        color = (255, 0, 0)
-        size = 2
+# Hintergrundsubtraktion
+bgs = cv.createBackgroundSubtractorMOG2(detectShadows=True, varThreshold=250)
+bgs.setBackgroundRatio(0.7)
+bgs.setShadowValue(255)
+bgs.setShadowThreshold(0.3)
 
-        frame_width = frame.shape[1]
-        x = frame_width - 60
-        y = 30
+tracks = []  # Punkte die verfolgt werden sollen
+detect_interval = 5  # Alle x = 5 Frames detektieren wir neue Feature Punkte
+track_len = 10
+prev_gray = None
+lost_track_counter = 0  # Noch nicht implementiert soll eig. für die Situation sein wenn der Tracke die Person verliert
+max_lost_frames = 10  # Same here ""
 
-        cv.putText(frame, name, (10, 30), font, font_scale, color, size, cv.LINE_AA)
-        cv.rectangle(frame, (x - 5, y - 15), (x + 50, y + 5), (255, 255, 255), -1)
-        cv.putText(frame, str(int(cap.get(cv.CAP_PROP_POS_FRAMES))), (x, y), font, 0.5, (0, 0, 0)) #frames oben rechts
+# TODO: HINWEIS der Tracker mit Lucas-Kanade von hier: https://github.com/npinto/opencv/blob/master/samples/python2/lk_track.py
 
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-    # Zielbreite für das Entbild
-    target_width = 1180
-
-    # Video laden
-    cap = cv.VideoCapture('../../assets/videos/LL-Default-Swap-Hell.mov')
-
-    # BGS-methoden mit Parametrisierung
-
-    MOG2 = cv.createBackgroundSubtractorMOG2(detectShadows=True, varThreshold=450)
-    MOG2.setBackgroundRatio(0.8)
-    MOG2.setShadowValue(255)
-    MOG2.setShadowThreshold(0.4)
-
-    # Kernel für Morph. Operatoren
     kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (5, 5))
-    tracker_initialized = False
-    prev_frame = None
-    prev_points=None
-    bounding_box = None
-    good_new_points = None
-    good_old_points = None
-    roi = None
-    x = None
-    y = None
-    w = None
-    h = None
 
-    while True:
-        ret, frame = cap.read()
-        if frame is None:
-            break
+    frame_gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
 
-        frame = cv.GaussianBlur(frame, (5, 5), 0)  # Rauschunterdrückung
+    fgmask = bgs.apply(frame)
+    fgmask = cv.morphologyEx(fgmask, cv.MORPH_OPEN, kernel)
+    fgmask = cv.morphologyEx(fgmask, cv.MORPH_CLOSE, kernel)
+    fgmask = cv.medianBlur(fgmask, 3)
+    cv.imshow('frame', fgmask)
+    contours, _ = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    vis = frame.copy()
 
-        # BGS anwenden
-        fgmask = MOG2.apply(frame)
+    if contours:
+        # Größte Kontur finden
+        """largest_contour = max(contours, key=cv.contourArea)
 
-        # Schatten von den Vordergrundmasken über Threshold entfernen
-        #fgmask = cv.threshold(fgmask, 254, 255, cv.THRESH_BINARY)[1]
-        fgmask = cv.morphologyEx(fgmask, cv.MORPH_OPEN, kernel)  # Rauschen entfernen
-        fgmask = cv.morphologyEx(fgmask, cv.MORPH_CLOSE, kernel)  # Löcher füllen
+        if cv.contourArea(largest_contour) > 500:
+            x, y, w, h = cv.boundingRect(largest_contour)  # Box um die Kontur ziehen
+            cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)"""
 
-        # Median-Filter zur weiteren Rauschreduzierung
-        fgmask = cv.medianBlur(fgmask, 3)
+        # Konturen filtern
+        filtered_contours = [contour for contour in contours if cv.contourArea(contour) >= 20000]
+        for contour in filtered_contours:
+            x, y, w, h = cv.boundingRect(contour)
+            cv.rectangle(vis, (x, y), (x + w, y + h), (0, 0, 255), 2)
 
-        # Maske in BGR-Bild umwandeln, weil sonst die Darstellung von Farb- und Graubild von den Channeln her nicht passt
-        fgmask_bgr = cv.cvtColor(fgmask, cv.COLOR_GRAY2BGR)
+    if len(tracks) > 0:
+        p0 = np.float32([tr[-1] for tr in tracks]).reshape(-1, 1, 2)  # Aktuellen Punkte der Tracks
+        p1, st, err = cv.calcOpticalFlowPyrLK(prev_gray, frame_gray, p0, None,
+                                              **lk_params)  # Bewegung der Punkte berechnen für: (Frame davor) und (Frame aktuell)
+        p0r, st, err = cv.calcOpticalFlowPyrLK(frame_gray, prev_gray, p1, None,
+                                               **lk_params)  # Umgekehrte optischer Fluss von aktuellem Frame zu Frame davor
 
-        # Frames beschriften
-        original_frame = frame.copy()
+        # Konsistenzprüfung
+        d = abs(p0 - p0r).reshape(-1, 2).max(-1)  # Punkte bei denen die Distanz zu groß ist, werden entfernt
+        good = d < 1
+        new_tracks = []  # Neue Punkte zum tracken kommen hier rein
+        for tr, (x, y), good_flag in zip(tracks, p1.reshape(-1, 2), good):
+            if not good_flag:
+                continue
+            tr.append((x, y))
+            if len(tr) > track_len:  # Entfernt alte Punkte, wenn die Track-Länge überschritten wird
+                del tr[0]
+            new_tracks.append(tr)
+            cv.circle(vis, (int(x), int(y)), 2, (0, 255, 0), -1)
 
-        if not tracker_initialized:
-            konturen, hierarchie = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-            if len(konturen) != 0:
-                largest_kontur = max(konturen, key=cv.contourArea)
-                if cv.contourArea(largest_kontur) > 500:
-                    cv.drawContours(fgmask_bgr, largest_kontur, -1, (0, 0, 255), 3)
-                    cv.drawContours(original_frame, largest_kontur, -1, (0, 0, 255), 3)
-                    x, y, w, h = cv.boundingRect(largest_kontur)
-                    bounding_box = [x, y, w, h]
-                    roi = original_frame[y:y+h, x:x+w]
+        tracks = new_tracks
+        cv.polylines(vis, [np.int32(tr) for tr in tracks], False, (0, 255, 0))
 
-                    # Harris Corner Detection im Bereich der Kontur anwenden
-                    gray_roi = cv.cvtColor(roi, cv.COLOR_BGR2GRAY)
-                    #gray_roi = np.float32(gray_roi)
-                    #prev_points = cv.cornerHarris(gray_roi, 3, 3, 0.04)
+    if int(cap.get(cv.CAP_PROP_POS_FRAMES)) % detect_interval == 0:  # Alle 5 Frames wird detektiert
 
-                    prev_points = cv.goodFeaturesToTrack(gray_roi, useHarrisDetector=True,maxCorners=100, qualityLevel=0.3, minDistance=7)
+        # Maske auf vorhandene Punkte anwenden tr[-1] letzter Punkt des aktuellen Tracks
+        # Punkte die bereits fürs Tracking existieren werden auf der weißen Maske mit radius 5 Schwarz gefärbt um redundante Punkte zu vermeiden und nicht doppelt zu tracken
+        # Neue Feature-Punkte detektieren
+        for contour in contours:
+            if cv.contourArea(contour) > 500:  # Mindestfläche
+                x, y, w, h = cv.boundingRect(contour)
+                roi = frame_gray[y:y + h, x:x + w]  # ROI um Feature-Suche einzugrenzen
 
-                    # Ecken markieren
-                    for point in prev_points:
-                        dx, dy = point.ravel()
-                        cv.circle(roi, (int(dx), int(dy)), 3, (0, 255, 0), -1)
+                # Maske für das aktuelle ROI erstellen
+                mask_roi = np.ones_like(roi) * 255  # Weiß (255) für die ganze ROI-Maske
 
-                    # Ecken markieren
-                    #roi[prev_points > 0.01 * prev_points.max()] = [0, 255, 0]
+                # Vorhandene Punkte auf der Maske im ROI-Bereich blockieren
+                for tx, ty in [np.int32(tr[-1]) for tr in tracks]:  # Punkte aus den Tracks
+                    if x <= tx <= x + w and y <= ty <= y + h:  # Nur Punkte im aktuellen ROI
+                        cv.circle(mask_roi, (int(tx - x), int(ty - y)), 5, 0, -1)  # Blockieren mit schwarz
 
-                    # Das markierte ROI zurück ins Originalbild einfügen
-                    prev_frame = cv.cvtColor(original_frame, cv.COLOR_BGR2GRAY)
-                    original_frame[y:y+h, x:x+w] = roi
-                    if cap.get(cv.CAP_PROP_POS_FRAMES) % 10 == 0:
-                        tracker_initialized = True
-        else:
-            # Optischer Fluss
-            current_frame = cv.cvtColor(original_frame, cv.COLOR_BGR2GRAY)
-            #current_frame = np.float32(current_frame)
-            new_points, status, error = cv.calcOpticalFlowPyrLK(prev_frame, current_frame, prev_points, None)
+                p = cv.goodFeaturesToTrack(roi, mask=mask_roi, **feature_params)  # Feature Punkte
 
-            if new_points is not None:
-                good_new_points = new_points[status == 1]
-                good_old_points = prev_points[status == 1]
+                if p is not None:
+                    for px, py in np.float32(p).reshape(-1, 2):
+                        tracks.append([(px + x, py + y)])
 
-            # Zeichne die Bewegungen im Frame
-            for i, (new, old) in enumerate(zip(good_new_points, good_old_points)):
-                a, b = new.ravel()
-                c, d = old.ravel()
-                mask = cv.line(original_frame, (int(a), int(b)), (int(c), int(d)), (0, 255, 0), 2)
-                original_frame = cv.circle(original_frame, (int(a), int(b)), 5, (0, 0, 255), -1)
+    prev_gray = frame_gray
+    cv.imshow('Tracking', vis)
 
-            # Aktualisiere Variablen
-            prev_points = good_new_points.reshape(-1, 1, 2)
-            prev_gray = current_frame
-            if cap.get(cv.CAP_PROP_POS_FRAMES) % 10 == 0:
-                tracker_initialized = False
+    # Beenden mit ESC
+    if cv.waitKey(80) & 0xFF == 27:
+        break
 
-
-
-        labelFrame(original_frame, 'Original')
-        labelFrame(fgmask_bgr, 'MOG2')
-
-
-        # Frames zusammenfügen (Original, MOG, CNT, KNN)
-        combined_frame = np.hstack((original_frame, fgmask_bgr))
-
-        # Bild skalieren auf die oben angegebene Größe
-        height, width = combined_frame.shape[:2]
-        scaling_factor = target_width / width
-        resized_frame = cv.resize(combined_frame, (int(width * scaling_factor), int(height * scaling_factor)))
-
-        # Ergebnis der BGS
-        cv.imshow('', resized_frame)
-
-        keyboard = cv.waitKey(145)
-        if keyboard == ord('q') or keyboard == 27:  # 'q' oder Esc
-            break
-
-    cap.release()
-    cv.destroyAllWindows()
-
-
-bgs()
+cap.release()
+cv.destroyAllWindows()
