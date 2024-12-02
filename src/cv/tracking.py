@@ -27,6 +27,7 @@ filtered_boxes = []
 hog = cv.HOGDescriptor()
 box_tracks = []
 updated_box_tracks = []
+last_box_tracks = []
 hog.setSVMDetector(cv.HOGDescriptor_getDefaultPeopleDetector())
 
 
@@ -51,6 +52,16 @@ while True:
 
     vis = frame.copy()
     cv.imshow('frame', fgmask)
+
+    contours, _ = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    if contours:
+
+        # Konturen filtern
+        filtered_contours = [contour for contour in contours if cv.contourArea(contour) >= 10000]
+        for contour in filtered_contours:
+            x, y, w, h = cv.boundingRect(contour)
+            cv.rectangle(vis, (x, y), (x + w, y + h), (0, 0, 255), 2)
+        cv.drawContours(vis, filtered_contours, -1, (0, 255, 0), 3)
 
     # HOG-Detektion
     if int(cap.get(cv.CAP_PROP_POS_FRAMES)) % detect_interval == 0:
@@ -97,7 +108,8 @@ while True:
                     box_tracks.append(
                         {
                             "box": (x, y, w, h),
-                            "features": [(px + x, py + y) for px, py in np.float32(p).reshape(-1, 2)]
+                            "features": [(px + x, py + y) for px, py in np.float32(p).reshape(-1, 2)],
+                            "mean_shift": [0, 0]
                         }
                     )
 
@@ -132,21 +144,32 @@ while True:
                 new_x = int(x + mean_shift[0])
                 new_y = int(y + mean_shift[1])
 
-
-                updated_box_tracks.append({
-                    "box": (new_x, new_y, w, h),
-                    "features": valid_points.tolist()
-                })
+                if np.count_nonzero(fgmask[new_y:new_y + h, new_x:new_x + w]) > 10000 and w * h > 100000:
+                    updated_box_tracks.append({
+                        "box": (new_x, new_y, w, h),
+                        "features": valid_points.tolist(),
+                        "mean_shift": mean_shift
+                    })
 
             for p in valid_points:
                 cv.circle(vis, (int(p[0]), int(p[1])), 2, (0, 255, 0), -1)
 
             #cv.polylines(vis, [np.int32(tr) for tr in features], False, (0, 255, 0))
 
-
+    if len(updated_box_tracks) == 0:
+        if len(last_box_tracks) > 0:
+            for track in last_box_tracks:
+                x, y, w, h = track["box"]
+                x = int(x + track["mean_shift"][0])
+                track["box"] = (x, y, w, h)
+                cv.rectangle(vis, (x + int(0.15 * w), y + int(0.05 * h)),
+                             (x + w - int(0.15 * w), y + h - int(0.05 * h)), (255, 0, 0), 1)
+    else:
         box_tracks.clear()
+        last_box_tracks.clear()
         for track in updated_box_tracks:
             box_tracks.append(track)
+            last_box_tracks.append(track)
         updated_box_tracks.clear()
 
         for track in box_tracks:
@@ -158,8 +181,12 @@ while True:
 
     cv.imshow('HOG', vis)
 
-    if cv.waitKey(15) & 0xFF == 27:
+    key = cv.waitKey(22)
+    if key & 0xFF == 27:
         break
+
+    if key == ord('p'):
+        cv.waitKey(-1)
 
 cap.release()
 cv.destroyAllWindows()
