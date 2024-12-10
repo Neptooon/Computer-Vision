@@ -110,6 +110,7 @@ class Tracker:
         self.min_width = 50
         self.last_feet_virt_box_tracks = []
         self.lock = 1
+        self.virt_frame_counter = 0
 
     def reinitialize_features(self, frame_gray, box, contours=None):
         x, y, w, h = box
@@ -370,6 +371,23 @@ class Tracker:
 
                 self.last_feet_virt_box_tracks = self.updated_box_tracks.copy()
 
+    def check_virt(self, boxes, points, vis, height, width):
+        if len(boxes) <= 0 < len(self.last_box_tracks) and self.virt_frame_counter <= 50:
+            margin = 50  # Abstand vom Kamerarand in Pixeln
+            valid_tracks = []
+            for track in self.last_box_tracks:
+                x, y, w, h = track["box"]
+                # Bedingung: Box nicht in der Nähe des Randes
+                if x > margin and y > margin and (x + w) < (width - margin) and (y + h) < (
+                        height - margin):
+                    valid_tracks.append(track)  # Box ist gültig
+
+            if valid_tracks:  # Nur wenn es gültige Tracks gibt
+                self.last_box_tracks = valid_tracks
+                self.virtual_movement()
+                self.draw_features(vis, points, self.last_box_tracks)
+                self.draw_boxes(vis, self.last_box_tracks)
+                self.virt_frame_counter += 1
 
     def init_new_tracks(self):
 
@@ -426,8 +444,7 @@ class SingleObjectTrackingPipeline:
 
             self.frame_counter += 1
             if len(self.tracker.box_tracks) < 1:
-                #print("DETEKT")
-                #self.tracker.box_tracks.clear()  TODO: war vorher drinne macht aber irgendwie kein unteschied
+
                 boxes = self.detector.detect(frame, fgmask)
                 self.tracker.init_tracks(boxes, frame_gray)
 
@@ -437,25 +454,10 @@ class SingleObjectTrackingPipeline:
                 else:
                     self.empty += 1
                 # --------------------------------------
-                if len(boxes) <= 0 < len(self.tracker.last_box_tracks) and self.virt_frame_counter <= 50:
-                    margin = 50  # Abstand vom Kamerarand in Pixeln
-                    valid_tracks = []
-                    for track in self.tracker.last_box_tracks:
-                        x, y, w, h = track["box"]
-                        # Bedingung: Box nicht in der Nähe des Randes
-                        if x > margin and y > margin and (x + w) < (self.width - margin) and (y + h) < (
-                                self.height - margin):
-                            valid_tracks.append(track)  # Box ist gültig
-
-                    if valid_tracks:  # Nur wenn es gültige Tracks gibt
-                        self.tracker.last_box_tracks = valid_tracks
-                        self.tracker.virtual_movement()
-                        self.tracker.draw_features(vis, points, self.tracker.last_box_tracks)
-                        self.tracker.draw_boxes(vis, self.tracker.last_box_tracks)
-                        self.virt_frame_counter += 1
+                self.tracker.check_virt(boxes, points,vis, self.height, self.width)
 
             else:
-                self.virt_frame_counter = 0
+                self.tracker.virt_frame_counter = 0
                 self.tracking_counter += 1
                 contours, _ = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
                 # if contours:  Check in die update_tracks verschoben
