@@ -484,7 +484,7 @@ class SingleObjectTrackingPipeline:
 
 
 if __name__ == "__main__":
-    pipeline = SingleObjectTrackingPipeline('../../assets/videos/ML3-LL-Dunkel-Default-LiveDemo.mov')
+    pipeline = SingleObjectTrackingPipeline('../../assets/videos/ML3-LL-Hell-Tafel-Sprint-Turnaround.mov')
     pipeline.run()
 
 
