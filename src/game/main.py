@@ -13,13 +13,13 @@ import numpy as np
 import pygame
 import generator as Generator
 import overlay as Overlay
-#from test import SingleObjectTrackingPipeline
+from game_tracker import SingleObjectTrackingPipeline
 
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 SCREEN = [SCREEN_WIDTH, SCREEN_HEIGHT]
-PLAYER_HEALTH = 1
-INIT_SCORE = 999
+PLAYER_HEALTH = 4
+INIT_SCORE = 0
 
 
 # --------------------------------------------------------------------------
@@ -45,7 +45,7 @@ class Player(pygame.sprite.Sprite):
 
         self.rect.update(x, y, w, h)
         self.surf = pygame.Surface((w, h), pygame.SRCALPHA)
-        pygame.draw.rect(self.surf, (0, 255, 0), (0, 0, w, h), 6)  # Grünen Rahmen zeichnen
+        pygame.draw.rect(self.surf, (255, 0, 0), (0, 0, w, h), 6)  # Grünen Rahmen zeichnen
         self.image = self.surf
 
     def update(self, pipeline):
@@ -79,7 +79,7 @@ fps = 30
 clock = pygame.time.Clock()
 
 # opencv - init webcam capture
-cap = cv.VideoCapture("../../assets/images/DS-Default-Pulli-Hell-LR.mov")
+cap = cv.VideoCapture(0)
 # set width & height to screen size
 #cap.set(cv2.CAP_PROP_FRAME_WIDTH, screen.get_width())
 #cap.set(cv2.CAP_PROP_FRAME_HEIGHT, screen.get_height())
@@ -128,7 +128,7 @@ def main():
         screen_height=SCREEN_HEIGHT
     )
 
-    #pipeline = SingleObjectTrackingPipeline(cap)
+    pipeline = SingleObjectTrackingPipeline(cap)
 
     running = True
 
@@ -144,6 +144,13 @@ def main():
 
         # -- opencv & viz image
         ret, cameraFrame = cap.read()
+        if cameraFrame is None:
+            break
+
+        cameraFrame = pipeline.tracker_run(cameraFrame)
+
+
+
         imgRGB = cv.cvtColor(cameraFrame, cv.COLOR_BGR2RGB)
         # image needs to be rotated for pygame
         imgRGB = np.rot90(imgRGB)
@@ -152,13 +159,7 @@ def main():
 
         screen.blit(gameFrame, (0, 0))
 
-        #pipeline.run(cameraFrame)
-        # --------------------------------------------------------------
-        #keys = pygame.key.get_pressed()
-        #for player in players:
-        #    player.update(keys)
-
-        #player1.update(pipeline)
+        player1.update(pipeline)
 
         # Früchte und Bomben generator
         new_fruit = generator.generate_fruit()
