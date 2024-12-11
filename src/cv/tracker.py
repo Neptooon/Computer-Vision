@@ -1,15 +1,16 @@
 import cv2 as cv
 import numpy as np
+from IoU import IoUMetrik
 
 
 # TODO: Virtualisieren der Boxen fehlt
 
 class BGS:
     def __init__(self):
-        self.backgroundSubtraction = cv.createBackgroundSubtractorMOG2(detectShadows=True, varThreshold=75) # 70
+        self.backgroundSubtraction = cv.createBackgroundSubtractorMOG2(detectShadows=True, varThreshold=75)  # 70
         self.backgroundSubtraction.setBackgroundRatio(0.7)
         self.backgroundSubtraction.setShadowValue(255)
-        self.backgroundSubtraction.setShadowThreshold(0.2) # 0.3
+        self.backgroundSubtraction.setShadowThreshold(0.2)  # 0.3
         self.kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (5, 5))
 
     def bgs_apply(self, frame):
@@ -27,7 +28,8 @@ class Detector:
     def detect(self, frame, fgmask):
 
         frame_down_sample = cv.resize(frame, ((frame.shape[1] // 25) * 10, (frame.shape[0] // 25) * 10))
-        boxes, weights = self.hog.detectMultiScale(frame_down_sample, winStride=(8, 8), padding=(8, 8), scale=1.07) #1.06 bzw 1.07
+        boxes, weights = self.hog.detectMultiScale(frame_down_sample, winStride=(8, 8), padding=(8, 8),
+                                                   scale=1.07)  # 1.06 bzw 1.07
         boxes = np.divide(boxes * 25, 10).astype(int)  # Up-sampling der Koordinaten
 
         for box, weight in zip(boxes, weights):
@@ -107,7 +109,6 @@ class Tracker:
         self.box_tracks = []
         self.last_box_tracks = []
         self.updated_box_tracks = []
-        self.min_width = 50
         self.last_feet_virt_box_tracks = []
         self.lock = 1
         self.virt_frame_counter = 0
@@ -162,7 +163,6 @@ class Tracker:
         for (x, y, w, h) in boxes:
             roi = frame_gray[y:y + h, x:x + w]  # ROI um Feature-Suche einzugrenzen
             features = cv.goodFeaturesToTrack(roi, **self.feature_params)
-            self.min_width = w
             if features is not None:
                 self.box_tracks.append(
                     {
@@ -180,8 +180,9 @@ class Tracker:
 
         points = []
         min_height = 50  # Mindesthöhe der Bounding-Box
+        min_width = 50
         buffer = 20  # Puffer, um Featurepunkte vollständig einzuschließen
-        alpha = 0.1  # Glättungsfaktor  0.3
+        alpha = 0.15  # Glättungsfaktor  0.3
         for i, track in enumerate(self.box_tracks):
             box = track["box"]
             features = np.float32(track["features"]).reshape(-1, 1, 2)
@@ -212,7 +213,7 @@ class Tracker:
 
                 # Berechne dynamische Höhe basierend auf Feature-Punkten
                 dynamic_height = max(max_y - min_y, min_height)
-                dynamic_width = max(max_x - min_x, self.min_width)  # Breite bleibt stabil oder wird angepasst
+                dynamic_width = max(max_x - min_x, min_width)  # Breite bleibt stabil oder wird angepasst
                 # max_x - min_x
                 # Konturen verwenden, um den Mittelpunkt zu aktualisieren
 
@@ -220,49 +221,36 @@ class Tracker:
                     filtered_contours = [contour for contour in contours if cv.contourArea(contour) >= 1000]
                     self.lock = 1
                     filtered_contours = merge_contours(filtered_contours)
-                    max_K_height = cv.boundingRect(max(merge_contours(filtered_contours), key=cv.contourArea))[3]
-                    max_K_width = cv.boundingRect(max(merge_contours(filtered_contours), key=cv.contourArea))[2]
 
-                    if max_K_height + max_K_width <= 450:
-                        filtered_contours.clear()
-
-                    """if filtered_contours:
-                        max_K_height = cv.boundingRect(max(merge_contours(filtered_contours), key=cv.contourArea))[3]
-                        max_K_width = cv.boundingRect(max(merge_contours(filtered_contours), key=cv.contourArea))[2]
-
-                        if max_K_height + max_K_width <= 450:
-                            # if max_K_height <= 75 or max_K_width <= 150:
-                            if max_K_height + max_K_width <= 350 and (max_K_height * 2.5 < max_K_width or max_K_height > max_K_width * 2.5):
-                                filtered_contours.clear()
-                            self.virtual_movement_feet(track, i, filtered_contours, box_center, vis, valid_points,
-                                                       frame_counter, frame_gray, prev_mean_shift, mean_shift)
-                            continue"""
-
+                    # Todo Hier stand Virt
 
                     cv.drawContours(vis, filtered_contours, -1, (0, 255, 0), 2)
                     if filtered_contours:
                         contour_centers = []
+
                         for contour in filtered_contours:
                             # Berechne jeden Mittelpunkt einer Kontur
                             M = cv.moments(contour)
                             # if M["m00"] > 0:
                             cx = int(M["m10"] / M["m00"] + 1e-5)  # x-Koordinate des Mittelpunkts
-                            cy = int(M["m01"] / M["m00"] + 1e-5) - buffer  # y-Koordinate des Mittelpunkts
-                            contour_centers.append((cx, cy))
+                            cy = int(M["m01"] / M["m00"] + 1e-5)  # y-Koordinate des Mittelpunkts
+                            if min_x <= cx <= min_x + dynamic_width or min_y <= cy <= min_y + dynamic_height:
+                                contour_centers.append((cx, cy))
 
                         if contour_centers:
                             # Berechnung der euklidische Distanz zur aktuellen Box
                             # Abstand zwischen dem Mittelpunkt der Box (box_center) und den Mittelpunkten der Konturen
                             distances = [np.linalg.norm(np.array(center) - box_center) for center in contour_centers]
-                            print("distanz", distances)
+
                             # Gewichte basierend auf der Distanz berechnen
                             weights = 1 / (np.array(distances) + 1e-5)  # Vermeidung von Division durch 0
-                            weights /= np.sum(weights)  # Normalisierung der Gewichte d.h immer 1 wenn nur 1 Kontur da ist
+                            weights /= np.sum(
+                                weights)  # Normalisierung der Gewichte d.h immer 1 wenn nur 1 Kontur da ist
+
                             # Gewichteten Mittelwert der Konturzentren berechnen
-                            print("Gewichte", weights)
                             weighted_center = np.sum(np.array(contour_centers) * weights[:, None], axis=0)
-                            print("CEN", weighted_center)
-                            # Glättung zwischen aktuellem Box-Mittelpunkt und gewichteter Mitte
+
+                            # Glätttung zwischen aktuellem Box-Mittelpunkt und gewichteter Mitte
                             smooth_center = (1 - alpha) * box_center + alpha * weighted_center
                             new_x = int(smooth_center[0] - dynamic_width // 2)
                             new_y = int(smooth_center[1] - dynamic_height // 2)
@@ -273,8 +261,8 @@ class Tracker:
                                 "features": valid_points.tolist() if frame_counter % 5 != 0 else
                                 self.reinitialize_features(
                                     frame_gray, (new_x, new_y, w, h), filtered_contours),
-                                "mean_shift": (prev_mean_shift := [[dx, dy]] if prev_mean_shift is None or len(prev_mean_shift) > 25
-                                               else prev_mean_shift + [[dx, dy]]),
+                                "mean_shift": (prev_mean_shift := [[dx, dy]] if prev_mean_shift is None or len(
+                                    prev_mean_shift) > 25 else prev_mean_shift + [[dx, dy]]),
                                 "center": [new_x + dynamic_width // 2, new_y + dynamic_height // 2]
                             })
 
@@ -304,7 +292,7 @@ class Tracker:
             for track in self.last_box_tracks:
                 x, y, w, h = track["box"]
                 x = np.int32(x + np.mean([shift[0] for shift in track["mean_shift"]]) * 2)
-                #y = np.int32(y + track["mean_shift"][1]) # Y-nicht
+                # y = np.int32(y + track["mean_shift"][1]) # Y-nicht
                 track["box"] = (x, y, w, h)
                 track["center"] = [(x + (w // 2)), (y + (h // 2))]
 
@@ -419,10 +407,11 @@ class SingleObjectTrackingPipeline:
         self.bgs = BGS()
         self.detector = Detector()
         self.tracker = Tracker()
+        self.iou_metrik = IoUMetrik(video_path)
         self.prev_gray = None
         self.width = self.cap.get(cv.CAP_PROP_FRAME_WIDTH)
         self.height = self.cap.get(cv.CAP_PROP_FRAME_HEIGHT)
-        self.virt_frame_counter = 0
+
 
         # Todo -- Nur für Metrik zwecke angelegt --
         self.frame_counter = 0
@@ -442,7 +431,6 @@ class SingleObjectTrackingPipeline:
             fgmask = self.bgs.bgs_apply(frame)
             points = []
 
-            self.frame_counter += 1
             if len(self.tracker.box_tracks) < 1:
 
                 boxes = self.detector.detect(frame, fgmask)
@@ -454,23 +442,25 @@ class SingleObjectTrackingPipeline:
                 else:
                     self.empty += 1
                 # --------------------------------------
-                self.tracker.check_virt(boxes, points,vis, self.height, self.width)
+                self.tracker.check_virt(boxes, points, vis, self.height, self.width)
 
             else:
                 self.tracker.virt_frame_counter = 0
                 self.tracking_counter += 1
                 contours, _ = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
                 # if contours:  Check in die update_tracks verschoben
-                points = self.tracker.update_tracks(self.prev_gray, frame_gray, fgmask, contours, self.frame_counter, vis)
+                points = self.tracker.update_tracks(self.prev_gray, frame_gray, fgmask, contours, self.frame_counter,
+                                                    vis)
                 self.tracker.init_new_tracks()
 
             self.tracker.draw_features(vis, points, self.tracker.box_tracks)
             self.tracker.draw_boxes(vis, self.tracker.box_tracks)
-
+            self.iou_metrik.get_iou_info(self.tracker.box_tracks, self.frame_counter)
+            self.frame_counter += 1
             self.prev_gray = frame_gray
 
             cv.imshow('HOG', vis)
-            # cv.imshow('BG', fgmask)
+            cv.imshow('BG', fgmask)
             key = cv.waitKey(10)
 
             if key & 0xFF == 27:
@@ -484,10 +474,8 @@ class SingleObjectTrackingPipeline:
 
 
 if __name__ == "__main__":
-    pipeline = SingleObjectTrackingPipeline('../../assets/videos/ML3-LL-Hell-Tafel-Sprint-Turnaround.mov')
+    pipeline = SingleObjectTrackingPipeline('../../assets/videos/ML3-DS-Dunkel-Tafel-LiveDemo.mov')
     pipeline.run()
-
-
 
 '''
 In die Pipeline Einbinden, falls bestimmte Funktionen nur auf die BoundingBox beschränkt werden sollen.
@@ -505,29 +493,38 @@ roi_y_end = min(fgmask.shape[0], y + h + padding)
 roi = fgmask[roi_y_start:roi_y_end, roi_x_start:roi_x_end]
 '''
 
+"""max_K_height = cv.boundingRect(max(merge_contours(filtered_contours), key=cv.contourArea))[3]
+                    max_K_width = cv.boundingRect(max(merge_contours(filtered_contours), key=cv.contourArea))[2]
 
-"""def iou(box_a, box_b):
-    # Boxen (x, y, w, h) in (x1, y1, x2, y2) umwandeln
-    x1_a, y1_a, w_a, h_a = box_a
-    x2_a, y2_a = x1_a + w_a, y1_a + h_a
+                    if max_K_height + max_K_width <= 450:
+                        filtered_contours.clear()
 
-    x1_b, y1_b, w_b, h_b = box_b
-    x2_b, y2_b = x1_b + w_b, y1_b + h_b
+                    if filtered_contours:
+                        max_K_height = cv.boundingRect(max(merge_contours(filtered_contours), key=cv.contourArea))[3]
+                        max_K_width = cv.boundingRect(max(merge_contours(filtered_contours), key=cv.contourArea))[2]
 
-    # Schnittmenge
-    inter_x1 = max(x1_a, x1_b)
-    inter_y1 = max(y1_a, y1_b)
-    inter_x2 = min(x2_a, x2_b)
-    inter_y2 = min(y2_a, y2_b)
+                        if max_K_height + max_K_width <= 450:
+                            # if max_K_height <= 75 or max_K_width <= 150:
+                            if max_K_height + max_K_width <= 350 and (max_K_height * 2.5 < max_K_width or max_K_height > max_K_width * 2.5):
+                                filtered_contours.clear()
+                            self.virtual_movement_feet(track, i, filtered_contours, box_center, vis, valid_points,
+                                                       frame_counter, frame_gray, prev_mean_shift, mean_shift)
+                            continue"""
 
-    inter_width = max(0, inter_x2 - inter_x1)
-    inter_height = max(0, inter_y2 - inter_y1)
-    intersection = inter_width * inter_height
+"""@staticmethod
+    def _filter_valid_points(p1, st, features, fgmask, box):
+        x, y, w, h = box
+        valid_points = p1[st == 1].reshape(-1, 2)
+        previous_points = features[st == 1].reshape(-1, 2)
 
-    # Vereinigungsmenge
-    area_a = w_a * h_a
-    area_b = w_b * h_b
-    union = area_a + area_b - intersection
+        box_filter = [
+            (x - 55 <= p[0] <= x + w + 55) and (y - 55 <= p[1] <= y + h + 55) for p in valid_points
+        ]
 
-    # IoU berechnen
-    return intersection / union if union > 0 else 0.0"""
+        mask_filter = [  # +25
+            not np.all(fgmask[int(p[1]):int(p[1]) + 5, int(p[0]):int(p[0]) + 5] == 0) for p in valid_points
+        ]
+
+        combined_filter = np.array(box_filter) & np.array(mask_filter)
+
+        return valid_points[combined_filter], previous_points[combined_filter]"""
