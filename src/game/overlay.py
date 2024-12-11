@@ -48,3 +48,14 @@ def draw_game_time(screen, start_time):
 
         # Zeichnen
         screen.blit(time_surface, (center_x, center_y))
+
+
+def draw_game_over(screen):
+    font = pygame.font.SysFont("arial", 60)
+    game_over_text = font.render("GAME OVER", True, (255, 0, 0))
+    restart_text = font.render("R = Restart", True, (255, 255, 255))
+    escape_text = font.render("ESC = Exit", True, (255, 255, 255))
+    screen.blit(game_over_text, (screen.get_width() // 2 - game_over_text.get_width() // 2, screen.get_height() // 2 - 100))
+    screen.blit(restart_text, (screen.get_width() // 2 - restart_text.get_width() // 2, screen.get_height() // 2 + 50))
+    screen.blit(escape_text, (screen.get_width() // 2 - escape_text.get_width() // 2, screen.get_height() // 2 + 150))
+    pygame.display.update()

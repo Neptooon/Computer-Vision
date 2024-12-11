@@ -5,19 +5,21 @@ Thema: pygame example with integrated OpenCV
 
 -----------------------------------------------------------------------------
 """
+
 import random
 
-import cv2
+import cv2 as cv
 import numpy as np
 import pygame
 import generator as Generator
 import overlay as Overlay
+#from test import SingleObjectTrackingPipeline
 
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 SCREEN = [SCREEN_WIDTH, SCREEN_HEIGHT]
-PLAYER_HEALTH = 4
-INIT_SCORE = 0
+PLAYER_HEALTH = 1
+INIT_SCORE = 999
 
 
 # --------------------------------------------------------------------------
@@ -27,12 +29,10 @@ class Player(pygame.sprite.Sprite):
     # -----------------------------------------------------------
     # init class
 
-    def __init__(self, posX, posY, color, name):
+    def __init__(self,name):
         super(Player, self).__init__()
-        self.surf = pygame.Surface((100, 30))
-        # fill with color
-        self.surf.fill(color)
-        self.rect = self.surf.get_rect(center=(posX, posY))
+        self.surf = pygame.Surface((0, 0), pygame.SRCALPHA)  # Hier muss die Bounding Box rein
+        self.rect = self.surf.get_rect()
         # start at screen center
         self.image = self.surf
         self.health = PLAYER_HEALTH
@@ -41,15 +41,19 @@ class Player(pygame.sprite.Sprite):
 
     # -----------------------------------------------------------
     # update player rectangle
-    def update(self, keys):
-        if keys[pygame.K_UP]:
-            self.rect.y -= 25
-        if keys[pygame.K_DOWN]:
-            self.rect.y += 25
-        if keys[pygame.K_LEFT]:
-            self.rect.x -= 25
-        if keys[pygame.K_RIGHT]:
-            self.rect.x += 25
+    def update_box_position(self, x, y, w, h):
+
+        self.rect.update(x, y, w, h)
+        self.surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        pygame.draw.rect(self.surf, (0, 255, 0), (0, 0, w, h), 6)  # Grünen Rahmen zeichnen
+        self.image = self.surf
+
+    def update(self, pipeline):
+
+        if len(pipeline.tracker.box_tracks) > 0:
+            for track in pipeline.tracker.box_tracks:
+                x, y, w, h = track["box"]
+                self.update_box_position(x, y, w, h)
 
     def catch_fruit(self, fruit):
         self.score += fruit.base_value + int(fruit.base_value * fruit.multiplier)
@@ -67,7 +71,7 @@ class Player(pygame.sprite.Sprite):
 pygame.init()
 
 # set display size and caption
-screen = pygame.display.set_mode(SCREEN)
+#screen = pygame.display.set_mode(SCREEN)
 pygame.display.set_caption("Computer Vision Game")
 
 # init game clock
@@ -75,12 +79,12 @@ fps = 30
 clock = pygame.time.Clock()
 
 # opencv - init webcam capture
-cap = cv2.VideoCapture(0)
+cap = cv.VideoCapture("../../assets/images/DS-Default-Pulli-Hell-LR.mov")
 # set width & height to screen size
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, screen.get_width())
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, screen.get_height())
+#cap.set(cv2.CAP_PROP_FRAME_WIDTH, screen.get_width())
+#cap.set(cv2.CAP_PROP_FRAME_HEIGHT, screen.get_height())
 start_time = None
-
+screen = pygame.display.set_mode([cap.get(cv.CAP_PROP_FRAME_WIDTH),cap.get(cv.CAP_PROP_FRAME_HEIGHT)])
 
 def start_game():
     global start_time
@@ -88,8 +92,8 @@ def start_game():
     start_time = pygame.time.get_ticks()
 
 
-def stop_game():
-    game_over()
+def stop_game(player): # Den Spieler übergeben der Verloren hat: für allein oder zweispieler
+    Overlay.draw_game_over(screen)
 
     waiting = True
     while waiting:
@@ -104,25 +108,15 @@ def stop_game():
                     waiting = False
 
 
-def game_over():
-    font = pygame.font.SysFont("arial", 60)
-    game_over_text = font.render("GAME OVER", True, (255, 0, 0))
-    restart_text = font.render("ESC = Exit R = Restart", True, (255, 255, 255))
-    screen.blit(game_over_text, (SCREEN_WIDTH // 2 - game_over_text.get_width() // 2, SCREEN_HEIGHT // 2 - 100))
-    screen.blit(restart_text, (SCREEN_WIDTH // 2 - restart_text.get_width() // 2, SCREEN_HEIGHT // 2 + 50))
-    pygame.display.update()
-
-
 def main():
 
     global start_time
     start_game()
 
-    player1 = Player(100, SCREEN_HEIGHT // 2, (0, 0, 255),
-                     'Player1')  # TODO Player Parameter Egal weil ja detektion außer name
-    player2 = Player(SCREEN_WIDTH - 100, SCREEN_HEIGHT // 2, (255, 0, 0), 'Player2')
+    player1 = Player('Player1')  # TODO Player Parameter Egal weil ja detektion außer name
+    player2 = Player('Player2')
 
-    players = pygame.sprite.Group(player1, player2)
+    players = pygame.sprite.Group(player1)
 
     fruits = pygame.sprite.Group()
     bombs = pygame.sprite.Group()
@@ -134,7 +128,10 @@ def main():
         screen_height=SCREEN_HEIGHT
     )
 
+    #pipeline = SingleObjectTrackingPipeline(cap)
+
     running = True
+
     while running:
 
         for event in pygame.event.get():
@@ -147,18 +144,21 @@ def main():
 
         # -- opencv & viz image
         ret, cameraFrame = cap.read()
-        imgRGB = cv2.cvtColor(cameraFrame, cv2.COLOR_BGR2RGB)
+        imgRGB = cv.cvtColor(cameraFrame, cv.COLOR_BGR2RGB)
         # image needs to be rotated for pygame
         imgRGB = np.rot90(imgRGB)
         # convert image to pygame and visualize
-        gameFrame = pygame.surfarray.make_surface(imgRGB).convert()
+        gameFrame = pygame.surfarray.make_surface(imgRGB).convert_alpha()
+
         screen.blit(gameFrame, (0, 0))
 
+        #pipeline.run(cameraFrame)
         # --------------------------------------------------------------
-        keys = pygame.key.get_pressed()
+        #keys = pygame.key.get_pressed()
+        #for player in players:
+        #    player.update(keys)
 
-        for player in players:
-            player.update(keys)
+        #player1.update(pipeline)
 
         # Früchte und Bomben generator
         new_fruit = generator.generate_fruit()
@@ -175,19 +175,18 @@ def main():
 
         # Frucht und Spieler
         for fruit in fruits:
-            for player in players:
-                if player.rect.colliderect(fruit.rect):
-                    player.catch_fruit(fruit)
+            if pygame.sprite.spritecollide(fruit, players, False):
+                player1.catch_fruit(fruit)
 
-        # Bombe und Spieler
         for bomb in bombs:
-            for player in players:
-                if bomb.player == player and player.rect.colliderect(bomb.rect):
-                    bomb.player.catch_bomb(bomb)
+            if pygame.sprite.spritecollide(bomb, players, False):
+                player1.catch_bomb(bomb)
+                 # Spieler 1 verliert bei Bombe
 
         for player in players:
             if player.health <= 0:
-                stop_game()
+                pass
+                #stop_game(player)
 
         # Früchte und Bomben zeichnen
         fruits.draw(screen)
@@ -200,7 +199,7 @@ def main():
         Overlay.draw_game_time(screen, start_time)
 
         # update  screen
-        pygame.display.update()
+        pygame.display.flip()
         # set clock
         clock.tick(fps)
 
