@@ -1,79 +1,79 @@
 [
     {
         "Video Name": "../../assets/videos/single_detect_videos\\DS-Default-Pulli-Dunkel-RL.mov",
-        "Average IoU": 0.6864466292953072
+        "Average IoU": 0.7436647027361164
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\DS-Default-Pulli-Hell-LR.mov",
-        "Average IoU": 0.7328339540652271
+        "Average IoU": 0.7589007051405054
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\DS-Default-Pulli-Hell-RL.mov",
-        "Average IoU": 0.6801651533727976
+        "Average IoU": 0.7449302963306809
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\DS-Default-Tshirt-Dunkel-RL.mov",
-        "Average IoU": 0.589800298879506
+        "Average IoU": 0.7622605041988494
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\DS-Default-Tshirt-Hell-RL.mov",
-        "Average IoU": 0.657359976228538
+        "Average IoU": 0.7544887647272287
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\DS-Parkour-CloseUp-Pulli-Hell.mov",
-        "Average IoU": 0.6278698368061282
+        "Average IoU": 0.6282184816535592
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\DS-Parkour-Tshirt-Dunkel-RL.mov",
-        "Average IoU": 0.5760597922504613
+        "Average IoU": 0.7670020119086673
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\DS-Parkour-Tshirt-Hell-RL.mov",
-        "Average IoU": 0.753203252137744
+        "Average IoU": 0.7640345595092709
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\DS-Tafel-Tshirt-Hell-RL.mov",
-        "Average IoU": 0.7304858073601944
+        "Average IoU": 0.7457393467029254
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Default-Pulli-Dunkel-RL-Short.mov",
-        "Average IoU": 0.605462046642404
+        "Average IoU": 0.7312589897000338
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Default-Pulli-Dunkel-RL.mov",
-        "Average IoU": 0.6611213818571361
+        "Average IoU": 0.7691750754739809
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Default-Pulli-Hell-LR.mov",
-        "Average IoU": 0.6712918003464253
+        "Average IoU": 0.7172877934527357
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Default-Pulli-Hell-RL-Short.mov",
-        "Average IoU": 0.5909952310148797
+        "Average IoU": 0.7046992292441974
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Default-Pulli-Hell-RL.mov",
-        "Average IoU": 0.6319264149575567
+        "Average IoU": 0.7293576577281626
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Default-Pulli-Hell-TurnAround.mov",
-        "Average IoU": 0.7485431599739187
+        "Average IoU": 0.7627127723949583
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Default-Pulli-Jogging-Hell-RL.mov",
-        "Average IoU": 0.6879976026143454
+        "Average IoU": 0.728984222176373
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Default-Tshirt-Dunkel-RL.mov",
-        "Average IoU": 0.6545051430966545
+        "Average IoU": 0.7966397279726412
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Default-Tshirt-Hell-RL.mov",
-        "Average IoU": 0.6737468745857181
+        "Average IoU": 0.7030767201515362
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Default-Tshirt-Jogging-Hell-RL.mov",
-        "Average IoU": 0.7005793890922817
+        "Average IoU": 0.6910659762912674
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Parkour-CloseUp-Pulli-Hell.mov",
@@ -81,46 +81,46 @@
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Parkour-Pulli-Dunkel-RL.mov",
-        "Average IoU": 0.7277466795114803
+        "Average IoU": 0.7508935081832268
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Parkour-Pulli-Hell-RL.mov",
-        "Average IoU": 0.6135263249275738
+        "Average IoU": 0.7423646137951803
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Tafel+2J+Bin-Pulli-Kapuze-Hell.mov",
-        "Average IoU": 0.6315928741697382
+        "Average IoU": 0.7209368130983809
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\LL-Tafel-Pulli-Hell-RL.mov",
-        "Average IoU": 0.6502936458629206
+        "Average IoU": 0.7534969365730084
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\ML3-DS-Dunkel-Tafel-LiveDemo.mov",
-        "Average IoU": 0.6630561434173383
+        "Average IoU": 0.7417166619446448
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\ML3-LL-Dunkel-Default-LiveDemo.mov",
-        "Average IoU": 0.7239946844917696
+        "Average IoU": 0.7990091892661612
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\ML3-LL-Hell-Tafel-LiveDemo.mov",
-        "Average IoU": 0.7139242833994874
+        "Average IoU": 0.7833807120692882
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\ML3-LL-Hell-Tafel-RL.mov",
-        "Average IoU": 0.6005503721207648
+        "Average IoU": 0.656928600272285
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\ML3-LL-Hell-Tafel-Sprint-Turnaround.mov",
-        "Average IoU": 0.5613657257148031
+        "Average IoU": 0.553050749367643
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\ML3-LL-Hell-Tafel-SprintAbbruch.mov",
-        "Average IoU": 0.5249840070278883
+        "Average IoU": 0.5483037583436682
     },
     {
         "Video Name": "../../assets/videos/single_detect_videos\\ML3-LL-Hell-Tafel-Turnaround.mov",
-        "Average IoU": 0.6459545844733868
+        "Average IoU": 0.6343885014184526
     }
 ]
