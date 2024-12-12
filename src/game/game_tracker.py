@@ -227,8 +227,8 @@ class Tracker:
                         for contour in filtered_contours:
                             # Berechne jeden Schwerpunkt einer Kontur
                             M = cv.moments(contour)
-                            cx = int(M["m10"] / M["m00"] + 1e-5)  # x-Koordinate
-                            cy = int(M["m01"] / M["m00"] + 1e-5) - buffer  # y-Koordinate
+                            cx = int(M["m10"] / (M["m00"] + 1e-5))  # x-Koordinate
+                            cy = int(M["m01"] / (M["m00"] + 1e-5)) - buffer  # y-Koordinate
                             if min_x <= cx <= min_x + dynamic_width or min_y <= cy <= min_y + dynamic_height:
                                 contour_centers.append((cx, cy))
 
@@ -314,7 +314,7 @@ class Tracker:
             for contour in filtered_contours:
                 # Berechne jeden Mittelpunkt einer Kontur
                 M = cv.moments(contour)
-                cx = int(M["m10"] / M["m00"] + 1e-5)  # x-Koordinate des Mittelpunkts
+                cx = int(M["m10"] / (M["m00"] + 1e-5))  # x-Koordinate des Mittelpunkts
                 cy = self.last_box_tracks[index]["center"][1]  # y-Koordinate des Mittelpunkts
                 contour_centers.append((cx, cy))
 
