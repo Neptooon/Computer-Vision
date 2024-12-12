@@ -8,7 +8,7 @@ video_folder = '../../assets/videos/single_detect_videos'  # Ordner mit Videos
 
 
 def iou_results(video_folder):
-    output_file = "IoU_results.json"
+    output_file = "IOUS_per_frame.json"
     results_iou = []
     for video_file in os.listdir(video_folder): # Alle Videos durchgehen
         if video_file.endswith('.mov'):
@@ -57,12 +57,12 @@ def compute_iou(box_a, ground_truth_box_b):
 
 
 def main():
-    # Datenauswertung
+    # Datenauswertung (Einkommentieren, falls die Daten erhoben werden sollen und nicht bereits in den JSON-Files sind
     #iou_results(video_folder)
     #yolo_results(video_folder)
 
 
-    with open('IoU_results.json') as f:
+    with open('IOUS_per_frame.json') as f:
         results_iou = json.load(f)
     with open('YOLO_results.json') as f:
         results_yolo = json.load(f)
@@ -101,10 +101,10 @@ def main():
 
     all_ious = [{"Video Name": video["video_name"], "Average IoU": video["average_iou"]} for video in video_ious]
 
-    with open('iou_final_results.json', "w") as f:
+    with open('IOU_result.json', "w") as f:
         json.dump(zusammenfassung, f, indent=4)
 
-    with open('all_video_ious.json', "w") as f:
+    with open('IOU_eval.json', "w") as f:
         json.dump(all_ious, f, indent=4)
 
 

@@ -29,7 +29,7 @@ class Player(pygame.sprite.Sprite):
         self.rect = self.surf.get_rect()
         # start at screen center
         self.image = self.surf
-        self.health = 4
+        self.health = 3
         self.score = 0
         self.name = name
 
