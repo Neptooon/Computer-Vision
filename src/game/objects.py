@@ -4,6 +4,7 @@ SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 SCREEN = [SCREEN_WIDTH, SCREEN_HEIGHT]
 
+# Sprites
 FRUIT_SPRITES = {
 
     'appleG': pygame.image.load('../../assets/sprites/Apple_Green.png'),
@@ -26,7 +27,7 @@ BOMB_SPRITES = {
 
 }
 
-
+# Früchte Klasse
 class Fruit(pygame.sprite.Sprite):
     def __init__(self, x, y, fruit_type, multiplier, base_value, depth=1.0):
         super(Fruit, self).__init__()
@@ -35,32 +36,34 @@ class Fruit(pygame.sprite.Sprite):
         fruit_height = 100 * scaling
         self.x = x
         self.y = y
-        if x - fruit_width // 2 < 0:
+        if x - fruit_width // 2 < 0:  # Frucht wird nur innerhalb des Screens platziert
             self.x = fruit_width // 2
         elif x + fruit_width // 2 > SCREEN_WIDTH:
             self.x = SCREEN_WIDTH - fruit_width // 2
 
-        self.image = pygame.transform.scale(FRUIT_SPRITES[fruit_type], (fruit_width, fruit_height))
+        self.image = pygame.transform.scale(FRUIT_SPRITES[fruit_type], (fruit_width, fruit_height))  # Sprite skalieren
         self.rect = self.image.get_rect(center=(self.x, self.y))
 
         self.fruit_type = fruit_type
-        self.multiplier = multiplier
-        self.base_value = base_value
+        self.multiplier = multiplier  # Score += basiswert * multiplier, wenn die Frucht gefangen
+        self.base_value = base_value  # Basiswert
         self.depth = depth
 
         self.font = pygame.font.Font(None, 32)
         self.render_multiplier()
 
+    # Frucht update
     def update(self):
         fall_speed = 4 / self.depth
         self.rect.y += fall_speed - 1
 
-        self.multiplier += (self.rect.y / SCREEN_HEIGHT) * 0.01
+        self.multiplier += (self.rect.y / SCREEN_HEIGHT) * 0.01  # Multiplier steigt je tiefer sie fällt
         self.render_multiplier()
 
         if self.rect.y > SCREEN_HEIGHT:
             self.kill()
 
+    # Rendern des Multipliers
     def render_multiplier(self):
 
         self.image = pygame.transform.scale(FRUIT_SPRITES[self.fruit_type], (self.rect.width, self.rect.height))
@@ -71,6 +74,7 @@ class Fruit(pygame.sprite.Sprite):
         self.image.blit(text_surface, background_rect)
 
 
+# Bomben Klasse
 class Bomb(pygame.sprite.Sprite):
     def __init__(self, x, y, bomb_type, player, base_value, multiplier, depth=1.0):
         super(Bomb, self).__init__()
@@ -79,30 +83,31 @@ class Bomb(pygame.sprite.Sprite):
         bomb_height = 110 * scaling
         self.x = x
         self.y = y
-        if x - bomb_width // 2 < 0:
+        if x - bomb_width // 2 < 0:  # Bombe innerhalb des Screens platzieren
             self.x = bomb_width // 2
         elif x + bomb_width // 2 > SCREEN_WIDTH:
             self.x = SCREEN_WIDTH - bomb_width // 2
 
-        self.image = pygame.transform.scale(BOMB_SPRITES[bomb_type], (bomb_width, bomb_height))
+        self.image = pygame.transform.scale(BOMB_SPRITES[bomb_type], (bomb_width, bomb_height))  # skalieren
         self.rect = self.image.get_rect(center=(self.x, self.y))
         self.player = player
-        self.base_value = base_value
+        self.base_value = base_value  # Score -= base_value * multi, wenn bombe NICHT gefangen wird
         self.multiplier = multiplier
         self.bomb_type = bomb_type
         self.depth = depth
 
         self.font = pygame.font.Font(None, 32)
-        self.render_multiplier()
+        self.render_multiplier()  # Bomben multi Rendern
 
+    # Bomben update
     def update(self):
         fall_speed = 4 / self.depth
         self.rect.y += fall_speed - 1
 
-        self.multiplier += (self.rect.y / SCREEN_HEIGHT) * 0.04  # growth rate
+        self.multiplier += (self.rect.y / SCREEN_HEIGHT) * 0.04  # Multiplier steigt je tiefer die Bombe
         self.render_multiplier()
 
-        if self.rect.y > SCREEN_HEIGHT:
+        if self.rect.y > SCREEN_HEIGHT: # Bombe nicht gefangen = -1 Hp und Score -= basval * multi
             self.kill()
             self.player.health -= 1
             if self.player.score - int(self.base_value * self.multiplier) >= 0:
@@ -110,6 +115,7 @@ class Bomb(pygame.sprite.Sprite):
             else:
                 self.player.score = 0
 
+    # Rendern des Multi
     def render_multiplier(self):
 
         self.image = pygame.transform.scale(BOMB_SPRITES[self.bomb_type], (self.rect.width, self.rect.height))

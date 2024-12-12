@@ -1,0 +1,7 @@
+{
+    "Gesamtanzahl Videos": 31,
+    "Best Case Detektion in Beziehung zur gesamt-Anz. der Videos": "30/31 = 0.97",
+    "Overall Average: Anzahl Detektionen zur stichhaltigen Frames": 0.01,
+    "Overall Average: Anzahl Tracks zu stichhaltigen Frames": 0.96,
+    "Fehldetektion und Tracking": "1/31 = 0.030000000000000034"
+}

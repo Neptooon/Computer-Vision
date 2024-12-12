@@ -2,6 +2,7 @@ import os
 import json
 from tracker import SingleObjectTrackingPipeline
 
+
 #Metrik für: Robustheit und Konsistenz des Trackens und der Detektion
 #Robustheit:
 # Komplizierte Gegebenheiten:
@@ -18,15 +19,15 @@ from tracker import SingleObjectTrackingPipeline
 
 
 video_folder = '../../assets/videos/single_detect_videos'  # Ordner mit Videos
-single_results = {} # Ergebnisse für Videos die tendenziell mit nur einmaliger Detektion und Tracking möglich sind
+single_results = {}  # Ergebnisse für Videos die tendenziell mit nur einmaliger Detektion und folgendem Tracking möglich sind
 
-for video_file in os.listdir(video_folder):
+for video_file in os.listdir(video_folder):  # Jedes Video durchgehen
     if video_file.endswith('.mov'):
         video_path = os.path.join(video_folder, video_file)
         print(f"Aktuelles Video: {video_file}")
 
         # Pipeline
-        pipeline = SingleObjectTrackingPipeline(video_path)
+        pipeline = SingleObjectTrackingPipeline(video_path)  # SOT ausführen
         pipeline.run()
 
         # Ergebnisse sichern
@@ -34,8 +35,8 @@ for video_file in os.listdir(video_folder):
             "Gesamt Anzahl Detektionen": pipeline.detect_counter,
             "Gesamt Anzahl Tracks": pipeline.tracking_counter,
             "Gesamtanzahl der stichhaltigen Frames": pipeline.detect_counter + pipeline.tracking_counter,
-            "Anzahl Detektionen zu stichhaltigen Frames in %": pipeline.detect_counter / (pipeline.detect_counter + pipeline.tracking_counter) if (pipeline.detect_counter + pipeline.tracking_counter) > 0 else 0,
-            "Anzahl Tracks zu stichhaltigen Frames %": pipeline.tracking_counter / (pipeline.detect_counter + pipeline.tracking_counter) if (pipeline.detect_counter + pipeline.tracking_counter) > 0 else 0,
+            "Anzahl Detektionen zu stichhaltigen Frames in Prozent": pipeline.detect_counter / (pipeline.detect_counter + pipeline.tracking_counter) if (pipeline.detect_counter + pipeline.tracking_counter) > 0 else 0,
+            "Anzahl Tracks zu stichhaltigen Frames in Prozent": pipeline.tracking_counter / (pipeline.detect_counter + pipeline.tracking_counter) if (pipeline.detect_counter + pipeline.tracking_counter) > 0 else 0,
             "Anzahl nicht stichhaltiger Frames": pipeline.frame_counter - (pipeline.detect_counter + pipeline.tracking_counter),
             "1-Detektion": 1 if pipeline.detect_counter == 1 else 0
 
@@ -43,9 +44,9 @@ for video_file in os.listdir(video_folder):
 
 
 total_videos = len(single_results)
-single_detect_success = sum([1 for result in single_results.values() if result["1-Detektion"] == 1])
-avg_detection_ratio = round(sum([result["Anzahl Detektionen zu stichhaltigen Frames in %"] for result in single_results.values()]) / total_videos, 2)
-avg_tracking_ratio = round(sum([result["Anzahl Tracks zu stichhaltigen Frames in %"] for result in single_results.values()]) /
+single_detect_success = sum([1 for result in single_results.values() if result["1-Detektion"] == 1]) # Videos mit nur 1 Detektion
+avg_detection_ratio = round(sum([result["Anzahl Detektionen zu stichhaltigen Frames in Prozent"] for result in single_results.values()]) / total_videos, 2)
+avg_tracking_ratio = round(sum([result["Anzahl Tracks zu stichhaltigen Frames in Prozent"] for result in single_results.values()]) /
                            total_videos, 2)
 # Ergebnisse in eine JSON-Datei schreiben
 with open('SOT_eval.json', 'w') as f:

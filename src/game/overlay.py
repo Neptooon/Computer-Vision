@@ -3,7 +3,7 @@ import pygame
 HEART = pygame.image.load('../../assets/sprites/heart.png')
 
 
-def draw_score(screen, players):
+def draw_score(screen, players):  # Score des jewl. Spielers zeichnen
     for player in players:
         font = pygame.font.SysFont("arial", 26)
         if player.name == 'Player1':
@@ -14,7 +14,7 @@ def draw_score(screen, players):
             screen.blit(score_text, (screen.get_width() - score_text.get_width() - 20, 20))
 
 
-def draw_hp(screen, players):
+def draw_hp(screen, players):  # Hp des jewl. Spielers zeichnen
 
     for player in players:
         if player.name == 'Player1':
@@ -25,7 +25,7 @@ def draw_hp(screen, players):
                 screen.blit(pygame.transform.scale(HEART, (60, 60)), (screen.get_width() - 40 - (i + 1) * 35, 50))
 
 
-def draw_game_time(screen, start_time):
+def draw_game_time(screen, start_time):  # Spieltimer zeichnen
     if start_time is not None:
 
         elapsed_time = pygame.time.get_ticks() - start_time
@@ -50,7 +50,7 @@ def draw_game_time(screen, start_time):
         screen.blit(time_surface, (center_x, center_y))
 
 
-def draw_game_over(screen):
+def draw_game_over(screen):  # Game Over Screen zeichnen
     font = pygame.font.SysFont("arial", 60)
     game_over_text = font.render("GAME OVER", True, (255, 0, 0))
     restart_text = font.render("R = Restart", True, (255, 255, 255))

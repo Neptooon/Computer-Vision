@@ -10,16 +10,16 @@ video_folder = '../../assets/videos/single_detect_videos'  # Ordner mit Videos
 def iou_results(video_folder):
     output_file = "IoU_results.json"
     results_iou = []
-    for video_file in os.listdir(video_folder):
+    for video_file in os.listdir(video_folder): # Alle Videos durchgehen
         if video_file.endswith('.mov'):
             video_path = os.path.join(video_folder, video_file)
             print(f"Aktuelles Video: {video_file}")
 
             # Pipeline
-            pipeline = SingleObjectTrackingPipeline(video_path)
+            pipeline = SingleObjectTrackingPipeline(video_path)  # SOT ausführen
             pipeline.run()
-            pipeline.iou_metrik.save_data()
-            results_iou.append(pipeline.iou_metrik.tracking_data)
+            pipeline.iou_metrik.save_data()  # Daten für Metrik erheben
+            results_iou.append(pipeline.iou_metrik.tracking_data) # Speichern
 
     with open(output_file, "w") as file:
         json.dump(results_iou, file, indent=4)
@@ -57,7 +57,7 @@ def compute_iou(box_a, ground_truth_box_b):
 
 
 def main():
-
+    # Datenauswertung
     #iou_results(video_folder)
     #yolo_results(video_folder)
 
