@@ -1,3 +1,4 @@
+import cv2
 import cv2 as cv
 import numpy as np
 
@@ -81,3 +82,23 @@ def merge_contours(contours, max_gap=100):  # Merged gefundene Konturen zu einer
         used[i] = True
 
     return merged_contours
+
+
+def draw_boxes(vis, box_tracks):  # Boxen zeichnen
+    for track in box_tracks:
+        x, y, w, h = track["box"]
+        cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        font = cv.FONT_HERSHEY_SIMPLEX
+        cv.putText(vis, str(track["id"]), (x, y), font, 1, (0, 0, 255), 2, cv.LINE_AA)
+
+
+def draw_features(vis, features, box_tracks):  # Feature zeichnen
+    if features is not None:
+        for feature_list in features:
+            for i, point in enumerate(feature_list):
+                cv.circle(vis, (int(point[0]), int(point[1])), 2, (0, 255, 0), -1)
+
+    if box_tracks is not None:
+        for track in box_tracks:
+            if track["center"] is not None:
+                cv.circle(vis, (int(track["center"][0]), int(track["center"][1])), 2, (0, 0, 255), 2)

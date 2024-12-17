@@ -2,7 +2,7 @@ import cv2 as cv
 from IoU import IoUMetrik
 from src.cv_modules.BGS import BGS
 from src.cv_modules.detector import Detector
-from src.cv_modules.helpers import merge_contours
+from src.cv_modules.helpers import merge_contours, draw_boxes, draw_features
 from src.cv_modules.tracker import Tracker
 
 
@@ -64,8 +64,8 @@ class SingleObjectTrackingPipeline:
                                                     self.detector, vis)
                 self.tracker.init_new_tracks()
 
-            self.tracker.draw_features(vis, points, self.tracker.box_tracks)
-            self.tracker.draw_boxes(vis, self.tracker.box_tracks)
+            draw_features(vis, points, self.tracker.box_tracks)
+            draw_boxes(vis, self.tracker.box_tracks)
             self.iou_metrik.get_iou_info(self.tracker.box_tracks, self.frame_counter)
             self.frame_counter += 1
             self.prev_gray = frame_gray

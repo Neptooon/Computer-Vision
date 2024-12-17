@@ -1,7 +1,7 @@
 import cv2 as cv
 import numpy as np
 
-from src.cv_modules.helpers import calculate_color_histogram, compare_histograms
+from src.cv_modules.helpers import calculate_color_histogram, draw_boxes, draw_features
 
 
 class Tracker:
@@ -281,8 +281,8 @@ class Tracker:
             if valid_tracks:  # Nur wenn es gültige Tracks gibt
                 self.last_box_tracks = valid_tracks
                 self.virtual_movement()
-                self.draw_features(vis, points, self.last_box_tracks)
-                self.draw_boxes(vis, self.last_box_tracks)
+                draw_features(vis, points, self.last_box_tracks)
+                draw_boxes(vis, self.last_box_tracks)
                 self.virt_frame_counter += 1
 
     def init_new_tracks(self):  # Neue Tracks init
@@ -292,20 +292,8 @@ class Tracker:
             self.last_box_tracks = self.updated_box_tracks
         self.updated_box_tracks = []
 
-    def draw_boxes(self, vis, box_tracks):  # Boxen zeichnen
-        for track in box_tracks:
-            x, y, w, h = track["box"]
-            cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)
-            font = cv.FONT_HERSHEY_SIMPLEX
-            cv.putText(vis, str(track["id"]), (x, y), font, 1, (0, 0, 255), 2, cv.LINE_AA)
 
-    def draw_features(self, vis, features, box_tracks):  # Feature zeichnen
-        if features is not None:
-            for feature_list in features:
-                for i, point in enumerate(feature_list):
-                    cv.circle(vis, (int(point[0]), int(point[1])), 2, (0, 255, 0), -1)
+class Track:
 
-        if box_tracks is not None:
-            for track in box_tracks:
-                if track["center"] is not None:
-                    cv.circle(vis, (int(track["center"][0]), int(track["center"][1])), 2, (0, 0, 255), 2)
+    def __init__(self):
+        self.trace = []
