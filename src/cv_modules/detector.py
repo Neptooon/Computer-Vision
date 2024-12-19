@@ -8,30 +8,6 @@ class Detector: # Detektor
     def __init__(self): # Hog-Deskriptor
         self.hog = cv.HOGDescriptor()
         self.hog.setSVMDetector(cv.HOGDescriptor_getDefaultPeopleDetector())
-        self.ids = []
-
-    def create_id(self, hist, features):
-        for id in self.ids:
-            if compare_histograms(hist, id["hist"]) < 0.5:
-                return id["id"]
-        self.ids.append({
-            "id": len(self.ids) + 1,
-            "hist": hist,
-            "features": features
-        })
-        return len(self.ids)
-
-    def get_histogram_by_id(self, search_id):
-        for entry in self.ids:
-            if entry["id"] == search_id:
-                return entry["hist"]
-        return None  # Falls die ID nicht gefunden wurde
-
-    def get_features_by_id(self, search_id):
-        for entry in self.ids:
-            if entry["id"] == search_id:
-                return entry["features"]
-        return None  # Falls die ID nicht gefunden wurde
 
     def detect(self, frame, fgmask):  # Detektiert Boxen und filtert die beste
 
@@ -57,6 +33,5 @@ class Detector: # Detektor
                     break
             else:
                 filtered_boxes.append(r)
-                print("FILTER")
         return [box for box in filtered_boxes if
                 np.count_nonzero(fgmask[box[1]:box[1] + box[3], box[0]:box[0] + box[2]]) > min_area]

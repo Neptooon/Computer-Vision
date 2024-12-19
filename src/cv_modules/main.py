@@ -1,5 +1,5 @@
 import cv2 as cv
-from IoU import IoUMetrik
+from src.metrics.IoU import IoUMetrik
 from src.cv_modules.BGS import BGS
 from src.cv_modules.detector import Detector
 from src.cv_modules.helpers import merge_contours, draw_boxes, draw_features
@@ -39,34 +39,28 @@ class SingleObjectTrackingPipeline:
             filtered_contours = [contour for contour in contours if cv.contourArea(contour) >= 1000]
             filtered_contours = merge_contours(filtered_contours)
             cv.drawContours(vis, filtered_contours, -1, (0, 255, 0), 2)
-            boxes = []
 
-            if len(self.tracker.box_tracks) < 1:
-
+            #if len(self.tracker.tracks) < 1:
+            if self.frame_counter % 5 == 0:
                 boxes = self.detector.detect(frame, fgmask)
                 self.tracker.init_tracks(boxes, frame_gray, vis, self.detector, filtered_contours)
 
                 # -------------------------------------- TODO Nur für Metrik
-                if len(self.tracker.box_tracks) >= 1:
+                '''if len(self.tracker.tracks) >= 1:
                     self.detect_counter += 1
                 else:
-                    self.empty += 1
+                    self.empty += 1'''
                 # --------------------------------------
-                self.tracker.check_virt(boxes, points, vis, self.height, self.width)
+                #self.tracker.check_virt(boxes, points, vis, self.height, self.width)
 
-            else:
-                if self.frame_counter == 50:
-                    self.tracker.init_tracks(boxes, frame_gray, vis, self.detector, filtered_contours)
-
-                self.tracker.virt_frame_counter = 0
-                self.tracking_counter += 1
-                points = self.tracker.update_tracks(self.prev_gray, frame_gray, fgmask, filtered_contours, self.frame_counter,
-                                                    self.detector, vis)
-                self.tracker.init_new_tracks()
-
-            draw_features(vis, points, self.tracker.box_tracks)
-            draw_boxes(vis, self.tracker.box_tracks)
-            self.iou_metrik.get_iou_info(self.tracker.box_tracks, self.frame_counter)
+            #else:
+            self.tracker.virt_frame_counter = 0
+            self.tracking_counter += 1
+            self.tracker.update_tracks(self.prev_gray, frame_gray, fgmask, filtered_contours,
+                                                self.frame_counter, self.detector, vis)
+            draw_features(vis, self.tracker.tracks)
+            draw_boxes(vis, self.tracker.tracks)
+            #self.iou_metrik.get_iou_info(self.tracker.tracks, self.frame_counter)
             self.frame_counter += 1
             self.prev_gray = frame_gray
 
@@ -85,7 +79,7 @@ class SingleObjectTrackingPipeline:
 
 
 if __name__ == "__main__":
-    pipeline = SingleObjectTrackingPipeline('../../assets/videos/LL-Default-Swap-Hell.mov')
+    pipeline = SingleObjectTrackingPipeline('../../assets/videos/LL-Tafel-Pulli-Hell-RL.mov')
     pipeline.run()
 
 '''

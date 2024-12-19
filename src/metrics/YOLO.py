@@ -9,7 +9,7 @@ model = YOLO("yolo11n.pt")  # Load an official Detect model
 #model = YOLO("yolo11n-pose.pt")  # Load an official Pose model
 #model = YOLO("path/to/best.pt")  # Load a custom trained model
 
-
+results = model.track("../../assets/videos/LL-Parkour-CloseUp-Pulli-Hell.mov", show=True)
 def yolo_results(video_folder):
     tracking_data = []
     output_file = "YOLO_results.json"

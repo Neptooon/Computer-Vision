@@ -1,6 +1,6 @@
 import os
 import json
-from tracker import SingleObjectTrackingPipeline
+from main import SingleObjectTrackingPipeline
 
 
 #Metrik für: Robustheit und Konsistenz des Trackens und der Detektion

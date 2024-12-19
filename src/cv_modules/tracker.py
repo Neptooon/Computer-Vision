@@ -1,18 +1,19 @@
 import cv2 as cv
 import numpy as np
 
-from src.cv_modules.helpers import calculate_color_histogram, draw_boxes, draw_features
+from src.cv_modules.helpers import calculate_color_histogram, draw_boxes, draw_features, compare_histograms
+from src.cv_modules.id import ID
 
 
 class Tracker:
     def __init__(self):
         self.lk_params = dict(winSize=(21, 21), maxLevel=3,
                               criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 15, 0.03))
-        self.feature_params = dict(maxCorners=100, qualityLevel=0.01, minDistance=10, blockSize=7)  # 21 bzw. 7
-        self.box_tracks = []
-        self.last_box_tracks = []
-        self.updated_box_tracks = []
-        self.last_partial_virt_box_tracks = []
+        self.feature_params = dict(maxCorners=100, qualityLevel=0.01, minDistance=10, blockSize=7)
+        self.tracks = []  # Liste von Track-Objekten
+        self.ids = []
+        self.last_tracks = []
+        self.last_partial_virt_tracks = []
         self.lock = 1
         self.virt_frame_counter = 0
 
@@ -61,132 +62,35 @@ class Tracker:
         else:
             return []
 
-    def init_tracks(self, boxes, frame_gray, vis, detector, contours):  # Tracks initialisieren
-        self.box_tracks.clear()
+    def init_tracks(self, boxes, frame_gray, vis, detector, contours):
         for (x, y, w, h) in boxes:
-            roi = frame_gray[y:y + h, x:x + w]  # ROI um Feature-Suche einzugrenzen
+            roi = frame_gray[y:y + h, x:x + w]
             features = cv.goodFeaturesToTrack(roi, **self.feature_params)
             features = [(px + x, py + y) for px, py in np.float32(features).reshape(-1, 2)]
             hist = calculate_color_histogram(vis, [x, y, w, h], contours)
-            id = detector.create_id(hist, features)
+            track_id, valid = self.create_id(hist, features)
+            # and compare_histograms(hist, id["hist"]) < 0.5
+            if features is not None and valid:
+                self.tracks.append(Track((x, y, w, h), features, hist, track_id))
 
-            if features is not None:
-                self.box_tracks.append(
-                    {
-                        "box": (x, y, w, h),
-                        "features": features,
-                        "mean_shift": [[0, 0]],
-                        "center": [(x + (w // 2)), (y + (h // 2))],
-                        "id": id,
-                        "hist": hist
-                    }
-                )
+    def update_tracks(self, prev_gray, frame_gray, fgmask, contours, frame_counter, detector, vis=None):
+        for track in self.tracks:
+            track.update(prev_gray, frame_gray, fgmask, contours, self.lk_params, vis)
 
-    def update_tracks(self, prev_gray, frame_gray, fgmask, contours, frame_counter, detector, vis=None):  # Tracks updaten
+    def create_id(self, hist, features):
+        if len(self.ids) > 0:
+            for key in self.ids:
+                if compare_histograms(hist, key.hist) < 0.6:
+                    return key.id, False
+        self.ids.append(ID(len(self.ids) + 1, hist, features))
+        return len(self.ids), True
 
-        if not contours:
-            return
+    def get_id(self, search_id):
+        for entry in self.ids:
+            if entry.id == search_id:
+                return entry
+        return None  # Falls die ID nicht gefunden wurde
 
-        points = []
-        min_height = 50  # Mindesthöhe der bbox
-        min_width = 50  # Mindestbreite der bbox
-        buffer = 20  # Puffer, um Featurepunkte vollständig einzuschließen
-        alpha = 0.15  # Glättungsfaktor um bbox Schwankung zu reduzieren
-
-
-        for i, track in enumerate(self.box_tracks):
-            box = track["box"]
-            features = np.float32(track["features"]).reshape(-1, 1, 2)
-            prev_mean_shift = track["mean_shift"]  # Vorherige durchsch. Verschiebung
-
-            # Vorwärts- und Rückwärtsfluss
-            p1, st, err = cv.calcOpticalFlowPyrLK(prev_gray, frame_gray, features, None, **self.lk_params)
-            p0, st0, err0 = cv.calcOpticalFlowPyrLK(frame_gray, prev_gray, p1, None, **self.lk_params)
-            valid_points, previous_points = self._filter_valid_points(p1, st, p0, fgmask)  # Punkte in Roi behalten
-
-            if len(valid_points) > 0:
-                # Durchschnittliche Verschiebung der Punkte
-
-                points.append(valid_points)
-                movement = valid_points - previous_points
-                mean_shift = np.mean(movement, axis=0)
-
-                x, y, w, h = box
-                dx, dy = mean_shift
-                # Berechne den neuen Mittelpunkt der bbox
-                box_center = np.array([x + dx + w // 2, y + dy + h // 2])
-
-                #Feature-Punkte zur Höhenanpassung
-                valid_y_coords = valid_points[:, 1]
-                valid_x_coords = valid_points[:, 0]
-                min_y = int(np.min(valid_y_coords)) - buffer
-                max_y = int(np.max(valid_y_coords)) + buffer
-                min_x = int(np.min(valid_x_coords)) - buffer
-                max_x = int(np.max(valid_x_coords)) + buffer
-
-                # Berechne dynamische Höhe basierend auf Feature-Punkten
-                dynamic_height = max(max_y - min_y, min_height)
-                dynamic_width = max(max_x - min_x, min_width)  # Breite bleibt stabil oder wird angepasst
-
-                # Konturen verwenden, um Mittelpunkt zu aktualisieren
-
-                if contours:
-                    self.lock = 1
-
-                    # Todo Hier stand Virt
-
-
-                    contour_centers = []
-
-                    for contour in contours:
-                        # Berechne jeden Schwerpunkt einer Kontur
-                        M = cv.moments(contour)
-                        cx = int(M["m10"] / (M["m00"] + 1e-5))  # x-Koordinate
-                        cy = int(M["m01"] / (M["m00"] + 1e-5)) - buffer  # y-Koordinate
-                        if min_x <= cx <= min_x + dynamic_width or min_y <= cy <= min_y + dynamic_height:
-                            contour_centers.append((cx, cy))
-
-                    if contour_centers:
-                        # Euklidische Distanz zur aktuellen Box
-                        # Abstand zwischen dem Mittelpunkt der Box (box_center) und den Schwerpunkten der Konturen
-                        distances = [np.linalg.norm(np.array(center) - box_center) for center in contour_centers]
-
-                        # Gewichte basierend auf der Distanz
-                        weights = 1 / (np.array(distances) + 1e-5)  # Vermeidung von Division durch 0
-                        weights /= np.sum(
-                            weights)  # Normalisierung der Gewichte d.h immer 1 wenn nur 1 Kontur da ist
-
-                        # Gewichteten Mittelwert der Schwerpunkte berechnen
-                        weighted_center = np.sum(np.array(contour_centers) * weights[:, None], axis=0)
-
-                        # Glätttung zwischen aktuellem Box-Mittelpunkt und gewichtetem Schwerpunkt
-                        even_center = (1 - alpha) * box_center + alpha * weighted_center
-                        new_x = int(even_center[0] - dynamic_width // 2)
-                        new_y = int(even_center[1] - dynamic_height // 2)
-
-                        # Box updaten und wenn notwendig, Featurepunkte neu berechnen
-                        self.updated_box_tracks.append({
-                            "box": (new_x, new_y, dynamic_width, dynamic_height),
-                            "features": valid_points.tolist() if frame_counter % 5 != 0 else
-                            self.reinitialize_features(
-                                frame_gray, (new_x, new_y, w, h), contour),
-                            "mean_shift": (prev_mean_shift := [[dx, dy]] if prev_mean_shift is None or len(
-                                prev_mean_shift) > 25 else prev_mean_shift + [[dx, dy]]),
-                            "center": [new_x + dynamic_width // 2, new_y + dynamic_height // 2],
-                            "id": track["id"],
-                            "hist": track["hist"]
-                        })
-
-        return points
-
-    @staticmethod
-    def _filter_valid_points(p1, st, features, fgmask):  # Nur Punkte in Roi werden als valid eingestuft
-        valid_points = p1[st == 1].reshape(-1, 2)
-        previous_points = features[st == 1].reshape(-1, 2)
-        mask_filter = [  # +25
-            not np.all(fgmask[int(p[1]):int(p[1]) + 5, int(p[0]):int(p[0]) + 5] == 0) for p in valid_points
-        ]
-        return valid_points[mask_filter], previous_points[mask_filter]
 
     def virtual_movement(self):
         print("VIRT")
@@ -285,15 +189,95 @@ class Tracker:
                 draw_boxes(vis, self.last_box_tracks)
                 self.virt_frame_counter += 1
 
-    def init_new_tracks(self):  # Neue Tracks init
-
-        self.box_tracks = self.updated_box_tracks
-        if len(self.box_tracks) != 0 and self.lock:
-            self.last_box_tracks = self.updated_box_tracks
-        self.updated_box_tracks = []
-
 
 class Track:
 
-    def __init__(self):
-        self.trace = []
+    def __init__(self, box, features, hist, track_id):
+        self.box = box  # (x, y, w, h)
+        self.features = features  # Liste der Feature-Punkte
+        self.hist = hist  # Farb-Histogramm der Box
+        self.id = track_id  # Eindeutige ID
+        self.center = [(box[0] + box[2] // 2), (box[1] + box[3] // 2)]  # Mittelpunkt der Box
+        self.mean_shift = [[0, 0]]  # Bewegungsgeschichte (Verschiebung)
+        self.trace = []  # Historie der Positionen
+        self.skiped_frames = 0
+        self.lost = False
+
+    def update(self, prev_gray, frame_gray, fgmask, contours, lk_params, vis=None):
+        buffer = 20
+        alpha = 0.15
+        min_height, min_width = 50, 50
+
+        # Berechne optischen Fluss
+        features = np.float32(self.features).reshape(-1, 1, 2)
+        p1, st, err = cv.calcOpticalFlowPyrLK(prev_gray, frame_gray, features, None, **lk_params)
+        p0, st0, err0 = cv.calcOpticalFlowPyrLK(frame_gray, prev_gray, p1, None, **lk_params)
+
+        # Filtere valide Punkte
+        valid_points, previous_points = self._filter_valid_points(p1, st, p0, fgmask)
+
+        if len(valid_points) > 0:
+            self.lost = False
+            movement = valid_points - previous_points
+            mean_shift = np.mean(movement, axis=0)
+
+            # Box-Parameter aktualisieren
+            x, y, w, h = self.box
+            dx, dy = mean_shift
+            box_center = np.array([x + dx + w // 2, y + dy + h // 2])
+
+            # Neue dynamische Box berechnen
+            valid_y_coords = valid_points[:, 1]
+            valid_x_coords = valid_points[:, 0]
+            min_y = int(np.min(valid_y_coords)) - buffer
+            max_y = int(np.max(valid_y_coords)) + buffer
+            min_x = int(np.min(valid_x_coords)) - buffer
+            max_x = int(np.max(valid_x_coords)) + buffer
+            dynamic_height = max(max_y - min_y, min_height)
+            dynamic_width = max(max_x - min_x, min_width)
+
+            if contours:
+                contour_centers = []
+                for contour in contours:
+                    M = cv.moments(contour)
+                    if M["m00"] != 0:
+                        cx = int(M["m10"] / M["m00"])
+                        cy = int(M["m01"] / M["m00"]) - buffer
+                        if min_x <= cx <= min_x + dynamic_width and min_y <= cy <= min_y + dynamic_height:
+                            contour_centers.append((cx, cy))
+
+                if contour_centers:
+                    distances = [np.linalg.norm(np.array(center) - box_center) for center in contour_centers]
+                    weights = 1 / (np.array(distances) + 1e-5)
+                    weights /= np.sum(weights)
+                    weighted_center = np.sum(np.array(contour_centers) * weights[:, None], axis=0)
+
+                    even_center = (1 - alpha) * box_center + alpha * weighted_center
+                    new_x = int(even_center[0] - dynamic_width // 2)
+                    new_y = int(even_center[1] - dynamic_height // 2)
+
+                    new_box = (new_x, new_y, dynamic_width, dynamic_height)
+                else:
+                    new_box = (x + dx, y + dy, w, h)
+            else:
+                new_box = (x + dx, y + dy, w, h)
+
+            # Update der Track-Eigenschaften
+            self.box = new_box
+            self.features = valid_points.tolist()
+            self.mean_shift.append(mean_shift.tolist())
+            self.center = [(new_box[0] + new_box[2] // 2), (new_box[1] + new_box[3] // 2)]
+            self.trace.append(self.center)
+
+        else:
+            self.skiped_frames += 1
+            self.lost = True
+
+    @staticmethod
+    def _filter_valid_points(p1, st, features, fgmask):  # Nur Punkte in Roi werden als valid eingestuft
+        valid_points = p1[st == 1].reshape(-1, 2)
+        previous_points = features[st == 1].reshape(-1, 2)
+        mask_filter = [  # +25
+            not np.all(fgmask[int(p[1]):int(p[1]) + 25, int(p[0]):int(p[0]) + 25] == 0) for p in valid_points
+        ]
+        return valid_points[mask_filter], previous_points[mask_filter]
