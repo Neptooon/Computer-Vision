@@ -1,9 +1,8 @@
 import cv2 as cv
 import numpy as np
 
-from src.cv_modules.helpers import calculate_color_histogram, draw_boxes, draw_features, compare_histograms
+from src.cv_modules.helpers import calculate_color_histogram, draw_boxes, draw_features, compare_histograms, compute_iou
 from src.cv_modules.id import ID
-
 
 class Tracker:
     def __init__(self):
@@ -17,79 +16,70 @@ class Tracker:
         self.lock = 1
         self.virt_frame_counter = 0
 
-    def reinitialize_features(self, frame_gray, box, contours=None):  # Feature werden alle X Frame reinitialisiert
+    def reinitialize_features(self, frame_gray, box, contours=None):
         x, y, w, h = box
-
-        if contours is not None and len(contours) > 0:
-            # Initialisieren der kombinierten ROI mit der Box
-            roi_x_start, roi_y_start = x, y
-            roi_x_end, roi_y_end = x + w, y + h
-
-            for contour in contours:
-                if isinstance(contour, np.ndarray) and len(contour) > 0:
-                    # Konturkoordinaten berechnen
-                    contour_x, contour_y, contour_w, contour_h = cv.boundingRect(contour)
-                    # ROI erweitern basierend auf Konturen
-                    roi_x_start = min(roi_x_start, contour_x)
-                    roi_y_start = min(roi_y_start, contour_y)
-                    roi_x_end = max(roi_x_end, contour_x + contour_w)
-                    roi_y_end = max(roi_y_end, contour_y + contour_h)
-
-            # Begrenzungen
-            roi_x_start = max(0, roi_x_start)
-            roi_y_start = max(0, roi_y_start)
-            roi_x_end = min(frame_gray.shape[1], roi_x_end)
-            roi_y_end = min(frame_gray.shape[0], roi_y_end)
-        else:
-            # Wenn keine Kontur vorhanden ist nur Box verwenden
-            roi_x_start, roi_y_start, roi_x_end, roi_y_end = x, y, x + w, y + h
-
-        # Begrenzungen
-        roi_x_start = max(0, roi_x_start)
-        roi_y_start = max(0, roi_y_start)
-        roi_x_end = min(frame_gray.shape[1], roi_x_end)
-        roi_y_end = min(frame_gray.shape[0], roi_y_end)
-
-        # ROI aus Graustufenbild extrahieren
-        roi = frame_gray[roi_y_start:roi_y_end, roi_x_start:roi_x_end]
-
-        # Neue Features innerhalb der neuen ROI berechnen
+        buffer = 20
+        dynamic_box = [
+            max(0, x - buffer),
+            max(0, y - buffer),
+            min(frame_gray.shape[1], x + w + buffer),
+            min(frame_gray.shape[0], y + h + buffer)
+        ]
+        roi = frame_gray[dynamic_box[1]:dynamic_box[3], dynamic_box[0]:dynamic_box[2]]
         features = cv.goodFeaturesToTrack(roi, **self.feature_params)
+        return [(px + dynamic_box[0], py + dynamic_box[1]) for px, py in np.float32(features).reshape(-1, 2)]
 
-        # Features von ROI-Koordinaten in globale Bildkoordinaten umrechnen
-        if features is not None:
-            return [(px + roi_x_start, py + roi_y_start) for px, py in np.float32(features).reshape(-1, 2)]
-        else:
-            return []
-
-    def init_tracks(self, boxes, frame_gray, vis, detector, contours):
+    def init_tracks(self, boxes, frame_gray, vis, detector, contours, fgmask, featuress=None):
+        boxes = detector.filter_boxes(boxes, fgmask)
         for (x, y, w, h) in boxes:
             roi = frame_gray[y:y + h, x:x + w]
             features = cv.goodFeaturesToTrack(roi, **self.feature_params)
             features = [(px + x, py + y) for px, py in np.float32(features).reshape(-1, 2)]
             hist = calculate_color_histogram(vis, [x, y, w, h], contours)
-            track_id, valid = self.create_id(hist, features)
-            # and compare_histograms(hist, id["hist"]) < 0.5
+            track_id, valid = self.create_id(hist, features, (x, y, w, h))
+            print(track_id, valid)
             if features is not None and valid:
                 self.tracks.append(Track((x, y, w, h), features, hist, track_id))
+                self.ids.append(ID(track_id, hist, features, (x, y, w, h)))
+            elif not valid:
+                p = self.get_track(track_id)
+                if p.lost == True:
+                    i = self.get_id(track_id)
+                    p.lost = False
+                    p.box = (x, y, w, h)
+                    p.features = features
+                    i.features = features
+
 
     def update_tracks(self, prev_gray, frame_gray, fgmask, contours, frame_counter, detector, vis=None):
         for track in self.tracks:
-            track.update(prev_gray, frame_gray, fgmask, contours, self.lk_params, vis)
+            if not track.lost:
+                track.update(prev_gray, frame_gray, fgmask, contours, self.lk_params, vis)
 
-    def create_id(self, hist, features):
-        if len(self.ids) > 0:
-            for key in self.ids:
-                if compare_histograms(hist, key.hist) < 0.6:
-                    return key.id, False
-        self.ids.append(ID(len(self.ids) + 1, hist, features))
-        return len(self.ids), True
+    def create_id(self, hist, features, box):
+        for key, track in zip(self.ids, self.tracks):
+            hist_similarity = compare_histograms(hist, key.hist)
+            feature_similarity = np.mean([
+                np.linalg.norm(np.array(f) - np.array(kf)) for f, kf in zip(features, key.features)
+            ]) if features and key.features else float('inf')
+
+            iou = compute_iou(box, track.box)
+            print(hist_similarity, feature_similarity, iou)
+            if hist_similarity <= 0.6 or feature_similarity >= 50 or iou >= 0.3:
+                return key.id, False
+        return len(self.ids) + 1, True
 
     def get_id(self, search_id):
         for entry in self.ids:
             if entry.id == search_id:
                 return entry
         return None  # Falls die ID nicht gefunden wurde
+
+    def get_track(self, track_id):
+        for entry in self.tracks:
+            if entry.id == track_id:
+                return entry
+        return None
 
 
     def virtual_movement(self):
@@ -216,7 +206,7 @@ class Track:
         # Filtere valide Punkte
         valid_points, previous_points = self._filter_valid_points(p1, st, p0, fgmask)
 
-        if len(valid_points) > 0:
+        if len(valid_points) > 10:
             self.lost = False
             movement = valid_points - previous_points
             mean_shift = np.mean(movement, axis=0)
@@ -268,7 +258,6 @@ class Track:
             self.mean_shift.append(mean_shift.tolist())
             self.center = [(new_box[0] + new_box[2] // 2), (new_box[1] + new_box[3] // 2)]
             self.trace.append(self.center)
-
         else:
             self.skiped_frames += 1
             self.lost = True

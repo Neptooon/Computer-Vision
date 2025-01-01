@@ -37,13 +37,12 @@ class SingleObjectTrackingPipeline:
             points = []
             contours, _ = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
             filtered_contours = [contour for contour in contours if cv.contourArea(contour) >= 1000]
-            filtered_contours = merge_contours(filtered_contours)
-            cv.drawContours(vis, filtered_contours, -1, (0, 255, 0), 2)
+
 
             #if len(self.tracker.tracks) < 1:
             if self.frame_counter % 5 == 0:
                 boxes = self.detector.detect(frame, fgmask)
-                self.tracker.init_tracks(boxes, frame_gray, vis, self.detector, filtered_contours)
+                self.tracker.init_tracks(boxes, frame_gray, vis, self.detector, filtered_contours, fgmask)
 
                 # -------------------------------------- TODO Nur für Metrik
                 '''if len(self.tracker.tracks) >= 1:
@@ -63,6 +62,8 @@ class SingleObjectTrackingPipeline:
             #self.iou_metrik.get_iou_info(self.tracker.tracks, self.frame_counter)
             self.frame_counter += 1
             self.prev_gray = frame_gray
+            filtered_contours = merge_contours(filtered_contours)
+            cv.drawContours(vis, filtered_contours, -1, (0, 255, 0), 2)
 
             cv.imshow('HOG', vis)
             #cv.imshow('BG', fgmask)
@@ -79,7 +80,7 @@ class SingleObjectTrackingPipeline:
 
 
 if __name__ == "__main__":
-    pipeline = SingleObjectTrackingPipeline('../../assets/videos/LL-Tafel-Pulli-Hell-RL.mov')
+    pipeline = SingleObjectTrackingPipeline('../../assets/videos/ML3-DS-Dunkel-Tafel-LiveDemo.mov')
     pipeline.run()
 
 '''

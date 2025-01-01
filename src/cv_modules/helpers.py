@@ -109,3 +109,34 @@ def draw_features(vis, tracks):  # Feature zeichnen
             if track.features is not None and not track.lost:
                 for point in track.features:
                     cv.circle(vis, (int(point[0]), int(point[1])), 2, (132, 0, 255), 2)
+
+
+def compute_iou(box_a, box_b):
+    # Boxen (x, y, w, h) in (x1, y1, x2, y2)
+
+    if any(val is None for val in box_a) or any(val is None for val in box_b):
+        return None
+    x1_a, y1_a, w_a, h_a = box_a
+    x2_a, y2_a = x1_a + w_a, y1_a + h_a
+
+    x1_b, y1_b, w_b, h_b = box_b
+    x2_b, y2_b = x1_b + w_b, y1_b + h_b
+
+    # Schnittmenge
+    inter_x1 = max(x1_a, x1_b)
+    inter_y1 = max(y1_a, y1_b)
+    inter_x2 = min(x2_a, x2_b)
+    inter_y2 = min(y2_a, y2_b)
+
+    inter_width = max(0, inter_x2 - inter_x1)
+    inter_height = max(0, inter_y2 - inter_y1)
+    intersection = inter_width * inter_height
+
+    # Vereinigungsmenge
+    area_a = w_a * h_a
+    area_b = w_b * h_b
+    union = area_a + area_b - intersection
+
+    # IoU berechnen
+    return intersection / union if union > 0 else 0.0
+
