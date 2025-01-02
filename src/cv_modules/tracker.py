@@ -12,9 +12,9 @@ class Tracker:
         self.tracks = []  # Liste von Track-Objekten
         self.ids = []
         self.last_tracks = []
-        self.last_partial_virt_tracks = []
-        self.lock = 1
-        self.virt_frame_counter = 0
+        #self.last_partial_virt_tracks = []
+        #self.lock = 1
+        #self.virt_frame_counter = 0 in Methode checkVirt
 
     def reinitialize_features(self, frame_gray, box, contours=None):
         x, y, w, h = box
@@ -27,9 +27,11 @@ class Tracker:
         ]
         roi = frame_gray[dynamic_box[1]:dynamic_box[3], dynamic_box[0]:dynamic_box[2]]
         features = cv.goodFeaturesToTrack(roi, **self.feature_params)
+        if features is None:
+            return []
         return [(px + dynamic_box[0], py + dynamic_box[1]) for px, py in np.float32(features).reshape(-1, 2)]
 
-    def init_tracks(self, boxes, frame_gray, vis, detector, contours, fgmask, featuress=None):
+    def init_tracks(self, boxes, frame_gray, vis, detector, contours, fgmask):
         boxes = detector.filter_boxes(boxes, fgmask)
         for (x, y, w, h) in boxes:
             roi = frame_gray[y:y + h, x:x + w]
@@ -40,10 +42,10 @@ class Tracker:
             print(track_id, valid)
             if features is not None and valid:
                 self.tracks.append(Track((x, y, w, h), features, hist, track_id))
-                self.ids.append(ID(track_id, hist, features, (x, y, w, h)))
+                self.ids.append(ID(track_id, hist, features, (x, y, w, h)))  # TODO Ersetzen
             elif not valid:
                 p = self.get_track(track_id)
-                if p.lost == True:
+                if p.lost:  #  TODO Ersetzen
                     i = self.get_id(track_id)
                     p.lost = False
                     p.box = (x, y, w, h)
@@ -51,12 +53,12 @@ class Tracker:
                     i.features = features
 
 
-    def update_tracks(self, prev_gray, frame_gray, fgmask, contours, frame_counter, detector, vis=None):
+    def update_tracks(self, prev_gray, frame_gray, fgmask, contours, vis=None):
         for track in self.tracks:
             if not track.lost:
                 track.update(prev_gray, frame_gray, fgmask, contours, self.lk_params, vis)
 
-    def create_id(self, hist, features, box):
+    def create_id(self, hist, features, box):  # id Klasse notwendig ? TODO Ersetzen
         for key, track in zip(self.ids, self.tracks):
             hist_similarity = compare_histograms(hist, key.hist)
             feature_similarity = np.mean([
@@ -65,119 +67,21 @@ class Tracker:
 
             iou = compute_iou(box, track.box)
             print(hist_similarity, feature_similarity, iou)
-            if hist_similarity <= 0.6 or feature_similarity >= 50 or iou >= 0.3:
+            if hist_similarity <= 0.6 and feature_similarity >= 50 and iou >= 0.3:
                 return key.id, False
         return len(self.ids) + 1, True
 
-    def get_id(self, search_id):
+    def get_id(self, search_id): # TODO Ersetzen
         for entry in self.ids:
             if entry.id == search_id:
                 return entry
         return None  # Falls die ID nicht gefunden wurde
 
-    def get_track(self, track_id):
+    def get_track(self, track_id): # TODO Ersetzen
         for entry in self.tracks:
             if entry.id == track_id:
                 return entry
         return None
-
-
-    def virtual_movement(self):
-        print("VIRT")
-        if len(self.last_partial_virt_box_tracks) > 0:
-            for track in self.last_partial_virt_box_tracks:
-                x, y, w, h = track["box"]
-                x = np.int32(x + np.mean([shift[0] for shift in track["mean_shift"]]) * 2)
-                track["box"] = (x, y, w, h)
-                track["center"] = [(x + (w // 2)), (y + (h // 2))]
-            self.last_box_tracks = self.last_partial_virt_box_tracks.copy()
-            self.last_partial_virt_box_tracks = []
-        else:
-            for track in self.last_box_tracks:
-                x, y, w, h = track["box"]
-                x = np.int32(x + np.mean([shift[0] for shift in track["mean_shift"]]) * 2)
-                # y = np.int32(y + track["mean_shift"][1]) # Y-nicht
-                track["box"] = (x, y, w, h)
-                track["center"] = [(x + (w // 2)), (y + (h // 2))]
-
-    def virtual_movement_partial(self, track, index, filtered_contours, box_center, vis,
-                                 valid_points, frame_counter, frame_gray, prev_mean_shift, mean_shift):
-        self.lock = 0
-        x, y, w, h = track["box"]
-        dx, dy, dw, dh = self.last_box_tracks[index]["box"]
-        alpha = 0.15
-
-        track["box"] = (x, dy, w, dh)
-        track["center"] = [(x + (w // 2)), (dy + (dh // 2))]
-
-        valid_y_coords = np.float32(self.last_box_tracks[index]["features"]).reshape(-1, 1, 2).reshape(-1, 2)[:, 1]
-        valid_x_coords = np.float32(self.last_box_tracks[index]["features"]).reshape(-1, 1, 2).reshape(-1, 2)[:, 0]
-        min_y = int(np.min(valid_y_coords)) - 20
-        max_y = int(np.max(valid_y_coords)) + 20
-        min_x = int(np.min(valid_x_coords)) - 20
-        max_x = int(np.max(valid_x_coords)) + 20
-
-        # Berechne dynamische Höhe basierend auf Feature-Punkten
-        dynamic_height = max(max_y - min_y, 50)
-        dynamic_width = max(max_x - min_x, 50)  # Breite bleibt stabil oder wird angepasst
-
-        if filtered_contours:
-            cv.drawContours(vis, filtered_contours, -1,
-                            (0, 255, 0), 2)
-            contour_centers = []
-            for contour in filtered_contours:
-
-                M = cv.moments(contour)
-                cx = int(M["m10"] / (M["m00"] + 1e-5))  # x-Koordinate
-                cy = self.last_box_tracks[index]["center"][1]  # y-Koordinate
-                contour_centers.append((cx, cy))
-
-            if contour_centers:
-
-                distances = [np.linalg.norm(np.array(center) - box_center) for center in contour_centers]
-
-                weights = 1 / (np.array(distances) + 1e-5)
-                weights /= np.sum(weights)
-
-                weighted_center = np.sum(np.array(contour_centers) * weights[:, None], axis=0)
-
-                even_center = (1 - alpha) * box_center + alpha * weighted_center
-                new_x = int(even_center[0] - dynamic_width // 2)
-                new_y = int(even_center[1] - dynamic_height // 2)
-
-                self.updated_box_tracks.append({
-                    "box": (new_x, new_y, dynamic_width, dynamic_height),
-                    "features": valid_points.tolist() if frame_counter % 5 != 0 else
-                    self.reinitialize_features(
-                        frame_gray, (new_x, new_y, w, h), filtered_contours),
-                    "mean_shift": (
-                        prev_mean_shift := [[mean_shift[0], mean_shift[1]]] if prev_mean_shift is None or len(
-                            prev_mean_shift) > 25
-                        else prev_mean_shift + [[mean_shift[0], mean_shift[1]]]),
-                    "center": [new_x + dynamic_width // 2, new_y + dynamic_height // 2],
-                    "id": track["id"],
-                    "hist": track["hist"]
-                })
-
-                self.last_partial_virt_box_tracks = self.updated_box_tracks.copy()
-
-    def check_virt(self, boxes, points, vis, height, width):
-        if len(boxes) <= 0 < len(self.last_box_tracks) and self.virt_frame_counter <= 50:
-            margin = 50  # Abstand vom Kamerarand in Pixeln
-            valid_tracks = []
-            for track in self.last_box_tracks:
-                x, y, w, h = track["box"]
-                # Bedingung: Box nicht in der Nähe des Randes
-                if x > margin and y > margin and (x + w) < (width - margin) and (y + h) < (
-                        height - margin):
-                    valid_tracks.append(track)  # Box ist gültig
-
-            if valid_tracks:  # Nur wenn es gültige Tracks gibt
-                self.last_box_tracks = valid_tracks
-                self.virtual_movement()
-                draw_features(vis, points, self.last_box_tracks)
-                draw_boxes(vis, self.last_box_tracks)
-                self.virt_frame_counter += 1
 
 
 class Track:
@@ -190,7 +94,7 @@ class Track:
         self.center = [(box[0] + box[2] // 2), (box[1] + box[3] // 2)]  # Mittelpunkt der Box
         self.mean_shift = [[0, 0]]  # Bewegungsgeschichte (Verschiebung)
         self.trace = []  # Historie der Positionen
-        self.skiped_frames = 0
+        self.skipped_frames = 0
         self.lost = False
 
     def update(self, prev_gray, frame_gray, fgmask, contours, lk_params, vis=None):
@@ -204,7 +108,7 @@ class Track:
         p0, st0, err0 = cv.calcOpticalFlowPyrLK(frame_gray, prev_gray, p1, None, **lk_params)
 
         # Filtere valide Punkte
-        valid_points, previous_points = self._filter_valid_points(p1, st, p0, fgmask)
+        valid_points, previous_points = self._filter_valid_points(p1, st, p0, fgmask) # features
 
         if len(valid_points) > 10:
             self.lost = False
@@ -232,7 +136,7 @@ class Track:
                     M = cv.moments(contour)
                     if M["m00"] != 0:
                         cx = int(M["m10"] / M["m00"])
-                        cy = int(M["m01"] / M["m00"]) - buffer
+                        cy = int(M["m01"] / M["m00"])
                         if min_x <= cx <= min_x + dynamic_width and min_y <= cy <= min_y + dynamic_height:
                             contour_centers.append((cx, cy))
 
@@ -259,7 +163,7 @@ class Track:
             self.center = [(new_box[0] + new_box[2] // 2), (new_box[1] + new_box[3] // 2)]
             self.trace.append(self.center)
         else:
-            self.skiped_frames += 1
+            self.skipped_frames += 1
             self.lost = True
 
     @staticmethod

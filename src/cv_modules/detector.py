@@ -1,8 +1,6 @@
 import cv2 as cv
 import numpy as np
 
-from src.cv_modules.helpers import compare_histograms
-
 
 class Detector: # Detektor
     def __init__(self): # Hog-Deskriptor
@@ -14,7 +12,7 @@ class Detector: # Detektor
         # Frame Down Samplen für schnellere Berechnung
         frame_down_sample = cv.resize(frame, ((frame.shape[1] // 25) * 10, (frame.shape[0] // 25) * 10))
         boxes, weights = self.hog.detectMultiScale(frame_down_sample, winStride=(8, 8), padding=(8, 8),
-                                                   scale=1.07)  # 1.06 bzw 1.07
+                                                   scale=1.1)  # Je geringer das Scaling, desto weniger Boxen aber schneller
         boxes = np.divide(boxes * 25, 10).astype(int)  # Up-sampling der Koordinaten
         return self.filter_boxes(boxes, fgmask)
 
