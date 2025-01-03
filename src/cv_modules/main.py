@@ -55,7 +55,7 @@ class SingleObjectTrackingPipeline:
             #else:
             #self.tracker.virt_frame_counter = 0
             self.tracking_counter += 1
-            self.tracker.update_tracks(self.prev_gray, frame_gray, fgmask, filtered_contours,vis)
+            self.tracker.update_tracks(self.prev_gray, frame_gray, fgmask, filtered_contours, vis)
             draw_features(vis, self.tracker.tracks)
             draw_boxes(vis, self.tracker.tracks)
             #self.iou_metrik.get_iou_info(self.tracker.tracks, self.frame_counter)

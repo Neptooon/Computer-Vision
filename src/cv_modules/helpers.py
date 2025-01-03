@@ -4,10 +4,13 @@ import numpy as np
 
 def calculate_color_histogram(frame, box, contours):
     x, y, w, h = box
+    x = int(max(0, x))
+    y = int(max(0, y))
     roi = frame[y:y + h, x:x + w]
 
     # Erstellen einer Maske für die Konturen
     mask = np.zeros(roi.shape[:2], dtype=np.uint8)
+
     #mask = cv.UMat(np.zeros(roi.shape[:2], dtype=np.uint8))
     # Anpassen der Konturen relativ zur ROI
     adjusted_contours = []

@@ -10,8 +10,8 @@ class Tracker:
                               criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 15, 0.03))
         self.feature_params = dict(maxCorners=100, qualityLevel=0.01, minDistance=10, blockSize=7)
         self.tracks = []  # Liste von Track-Objekten
-        self.ids = []
         self.last_tracks = []
+        self.id_count = 0
         #self.last_partial_virt_tracks = []
         #self.lock = 1
         #self.virt_frame_counter = 0 in Methode checkVirt
@@ -42,7 +42,6 @@ class Tracker:
             print(track_id, valid)
             if features is not None and valid:
                 self.tracks.append(Track((x, y, w, h), features, hist, track_id))
-                self.ids.append(ID(track_id, hist, features, (x, y, w, h)))  # TODO Ersetzen
             elif not valid:
                 p = self.get_track(track_id)
                 if p.lost:  #  TODO Ersetzen
@@ -58,18 +57,19 @@ class Tracker:
             if not track.lost:
                 track.update(prev_gray, frame_gray, fgmask, contours, self.lk_params, vis)
 
-    def create_id(self, hist, features, box):  # id Klasse notwendig ? TODO Ersetzen
-        for key, track in zip(self.ids, self.tracks):
-            hist_similarity = compare_histograms(hist, key.hist)
+    def create_id(self, hist, features, box):
+        for track in self.tracks:
+            hist_similarity = compare_histograms(hist, track.hist)
             feature_similarity = np.mean([
-                np.linalg.norm(np.array(f) - np.array(kf)) for f, kf in zip(features, key.features)
-            ]) if features and key.features else float('inf')
+                np.linalg.norm(np.array(f) - np.array(kf)) for f, kf in zip(features, track.features)
+            ]) if features and track.features else float('inf')
 
             iou = compute_iou(box, track.box)
             print(hist_similarity, feature_similarity, iou)
-            if hist_similarity <= 0.6 and feature_similarity >= 50 and iou >= 0.3:
-                return key.id, False
-        return len(self.ids) + 1, True
+            if hist_similarity <= 0.5 and feature_similarity >= 50 and iou >= 0.3:
+                return track.id, False
+        self.id_count = self.id_count + 1
+        return self.id_count, True
 
     def get_id(self, search_id): # TODO Ersetzen
         for entry in self.ids:
@@ -157,6 +157,8 @@ class Track:
                 new_box = (x + dx, y + dy, w, h)
 
             # Update der Track-Eigenschaften
+            if contours:
+                self.hist = calculate_color_histogram(vis, new_box, contours)
             self.box = new_box
             self.features = valid_points.tolist()
             self.mean_shift.append(mean_shift.tolist())
