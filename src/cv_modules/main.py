@@ -38,24 +38,11 @@ class SingleObjectTrackingPipeline:
             contours, _ = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
             filtered_contours = [contour for contour in contours if cv.contourArea(contour) >= 1000]
 
-
-            #if len(self.tracker.tracks) < 1:
             if self.frame_counter % 5 == 0:
                 boxes = self.detector.detect(frame, fgmask)
-                self.tracker.init_tracks(boxes, frame_gray, vis, self.detector, filtered_contours, fgmask)
-
-                # -------------------------------------- TODO Nur für Metrik
-                '''if len(self.tracker.tracks) >= 1:
-                    self.detect_counter += 1
-                else:
-                    self.empty += 1'''
-                # --------------------------------------
-                #self.tracker.check_virt(boxes, points, vis, self.height, self.width)
-
-            #else:
-            #self.tracker.virt_frame_counter = 0
-            self.tracking_counter += 1
+                self.tracker.update2(boxes, frame_gray, vis, filtered_contours)
             self.tracker.update_tracks(self.prev_gray, frame_gray, fgmask, filtered_contours, vis)
+
             draw_features(vis, self.tracker.tracks)
             draw_boxes(vis, self.tracker.tracks)
             #self.iou_metrik.get_iou_info(self.tracker.tracks, self.frame_counter)

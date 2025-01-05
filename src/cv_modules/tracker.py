@@ -2,7 +2,8 @@ import cv2 as cv
 import numpy as np
 
 from src.cv_modules.helpers import calculate_color_histogram, draw_boxes, draw_features, compare_histograms, compute_iou
-from src.cv_modules.id import ID
+from scipy.optimize import linear_sum_assignment
+
 
 class Tracker:
     def __init__(self):
@@ -10,11 +11,7 @@ class Tracker:
                               criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 15, 0.03))
         self.feature_params = dict(maxCorners=100, qualityLevel=0.01, minDistance=10, blockSize=7)
         self.tracks = []  # Liste von Track-Objekten
-        self.last_tracks = []
-        self.id_count = 0
-        #self.last_partial_virt_tracks = []
-        #self.lock = 1
-        #self.virt_frame_counter = 0 in Methode checkVirt
+        self.id_count = 1
 
     def reinitialize_features(self, frame_gray, box, contours=None):
         x, y, w, h = box
@@ -31,58 +28,161 @@ class Tracker:
             return []
         return [(px + dynamic_box[0], py + dynamic_box[1]) for px, py in np.float32(features).reshape(-1, 2)]
 
-    def init_tracks(self, boxes, frame_gray, vis, detector, contours, fgmask):
-        boxes = detector.filter_boxes(boxes, fgmask)
-        for (x, y, w, h) in boxes:
-            roi = frame_gray[y:y + h, x:x + w]
-            features = cv.goodFeaturesToTrack(roi, **self.feature_params)
-            features = [(px + x, py + y) for px, py in np.float32(features).reshape(-1, 2)]
-            hist = calculate_color_histogram(vis, [x, y, w, h], contours)
-            track_id, valid = self.create_id(hist, features, (x, y, w, h))
-            print(track_id, valid)
-            if features is not None and valid:
-                self.tracks.append(Track((x, y, w, h), features, hist, track_id))
-            elif not valid:
-                p = self.get_track(track_id)
-                if p.lost:  #  TODO Ersetzen
-                    i = self.get_id(track_id)
-                    p.lost = False
-                    p.box = (x, y, w, h)
-                    p.features = features
-                    i.features = features
 
+    def compute_track_features(self, detection, frame, vis, contours):
+        (x, y, w, h) = detection
+        roi = frame[y:y + h, x:x + w]
+        features = cv.goodFeaturesToTrack(roi, **self.feature_params)
+        features = [(px + x, py + y) for px, py in np.float32(features).reshape(-1, 2)]
+        hist = calculate_color_histogram(vis, [x, y, w, h], contours)
+
+        new_track = Track(box=(x, y, w, h), hist=hist, features=features, track_id=self.id_count)
+        self.id_count += 1
+        return new_track
+
+
+    def update(self, detections, frame, vis, contours):
+
+        # Tracks anlegen
+        if len(self.tracks) == 0 and len(detections) != 0:
+            for box in detections:
+                new_track = self.compute_track_features(box, frame, vis, contours)
+                self.tracks.append(new_track)
+
+        cost_matrix = self.setup_matrix(detections, contours, vis)
+        if len(cost_matrix) == 0 or len(cost_matrix[0]) == 0:
+            return
+
+        assignments = []
+        unassigned = []
+
+        track_indices, detection_indices = linear_sum_assignment(cost_matrix)
+
+        # Zuordnung der Detektionen zu den Tracks
+        for t_index, d_index in zip(track_indices, detection_indices):
+            if cost_matrix[t_index][d_index] > 1.0:  # TODO Schwellwert
+                #self.tracks[t_index].update()  # TODO HIER MUSS DER TRACK AKTUALISIERT WERDEN
+                assignments.append(d_index)  # TODO: Weil hier wurde der detektion "d_index" der track self.tracks[t_index] zugeordnet
+                self.tracks[t_index].lost = False
+            else:
+                self.tracks[t_index].lost = True
+                self.tracks[t_index].skipped_frames += 1
+                unassigned.append(d_index)
+
+        # Welche Tracks können gelöscht werden?
+        del_tracks = []
+        for i, track in enumerate(self.tracks):
+            if track.skipped_frames > 5:  # TODO bestimmte Frame Anzahl festlegen
+                del_tracks.append(i)
+        if len(del_tracks) > 0:
+            for index in del_tracks:
+                if index < len(self.tracks):
+                    del self.tracks[index]
+                    del assignments[index]
+
+        # Welche Detektionen haben keine Zuordnung zu den Tracks bekommen
+        if len(unassigned) != 0:
+            for d_idx in unassigned:
+                new_track = self.compute_track_features(detections[d_idx], frame, vis, contours)
+                self.tracks.append(new_track)
+
+        for track in self.tracks:
+            if not track.updated:
+                track.lost = True
+
+
+    def update2(self, detections, frame, vis, contours):
+
+        if len(self.tracks) == 0 and len(detections) != 0:
+            for box in detections:
+                new_track = self.compute_track_features(box, frame, vis, contours)
+                self.tracks.append(new_track)
+
+        cost_matrix = self.setup_matrix(detections, contours, vis)
+        if len(cost_matrix) == 0 or len(cost_matrix[0]) == 0:
+            return
+
+        assignments = [-1 for _ in range(len(self.tracks))]
+        unassigned = []
+
+        track_indices, detection_indices = linear_sum_assignment(cost_matrix)
+
+        for idx in range(len(track_indices)):
+            assignments[track_indices[idx]] = detection_indices[idx]
+            if self.tracks[track_indices[idx]].lost:
+
+                self.tracks[track_indices[idx]].lost = False
+                (x, y, w, h) = detections[detection_indices[idx]]
+                roi = frame[y:y + h, x:x + w]
+                features = cv.goodFeaturesToTrack(roi, **self.feature_params)
+                features = [(px + x, py + y) for px, py in np.float32(features).reshape(-1, 2)]
+                self.tracks[track_indices[idx]].features = features
+                self.tracks[track_indices[idx]].box = (x, y, w, h)
+
+        for idx in range(len(assignments)):
+            if assignments[idx] != -1:
+                if cost_matrix[idx][assignments[idx]] > 0.5:  # 50
+                    assignments[idx] = -1
+                    unassigned.append(idx)
+            else:
+                self.tracks[idx].skipped_frames += 1
+
+        del_tracks = []
+        for idx in range(len(self.tracks)):
+            if self.tracks[idx].skipped_frames > 5:
+                del_tracks.append(idx)
+                self.tracks[idx].lost = True
+            else:
+                self.tracks[idx].lost = False
+        if len(del_tracks) > 0:
+            for idx in del_tracks:
+                if idx < len(self.tracks):
+                    del self.tracks[idx]
+                    del assignments[idx]
+                else:
+                    pass
+
+        unassigned_detections = []
+        for idx in range(len(detections)):
+            if idx not in assignments:
+                unassigned_detections.append(idx)
+
+        if len(unassigned_detections) != 0:
+            for idx in range(len(unassigned_detections)):
+                new_track = self.compute_track_features(detections[unassigned_detections[idx]], frame, vis, contours)
+                self.tracks.append(new_track)
+        print(self.tracks)
+    def setup_matrix(self, detections, contours, vis):
+
+        cost_matrix = []
+        for track in self.tracks:
+            costs = []
+            for detection in detections:
+                detection_center = [detection[0] + detection[2] // 2, detection[1] + detection[3] // 2]
+                #iou = compute_iou(track.box, detection)
+                hist_sim = compare_histograms(calculate_color_histogram(vis, detection, contours), track.hist)
+                #print(np.array(track.trace[-1:]), "------------", np.array([detection_center]))
+                center_dist = np.linalg.norm(np.array(track.trace[-1:]) - np.array([detection_center]))
+                #print("TRACKER CENTER", track.trace[-1:], "-----------", "Detection Center", detection_center)
+                #print("Distanz", center_dist)
+                #flow = np.linalg.norm(track.mean_shift[-1:] - (np.array(track.trace[-1:]) - np.array([detection_center])))
+                #print("FLOW", flow)
+                cost = hist_sim
+
+                costs.append(cost)
+            cost_matrix.append(costs)
+
+        #cost_matrix = (0.5) * np.array(cost_matrix)
+        #print("Kostenmatrix", cost_matrix)
+        if len(cost_matrix) == 0 or len(cost_matrix[0]) == 0:
+            return []
+        return cost_matrix
 
     def update_tracks(self, prev_gray, frame_gray, fgmask, contours, vis=None):
+
         for track in self.tracks:
             if not track.lost:
                 track.update(prev_gray, frame_gray, fgmask, contours, self.lk_params, vis)
-
-    def create_id(self, hist, features, box):
-        for track in self.tracks:
-            hist_similarity = compare_histograms(hist, track.hist)
-            feature_similarity = np.mean([
-                np.linalg.norm(np.array(f) - np.array(kf)) for f, kf in zip(features, track.features)
-            ]) if features and track.features else float('inf')
-
-            iou = compute_iou(box, track.box)
-            print(hist_similarity, feature_similarity, iou)
-            if hist_similarity <= 0.5 and feature_similarity >= 50 and iou >= 0.3:
-                return track.id, False
-        self.id_count = self.id_count + 1
-        return self.id_count, True
-
-    def get_id(self, search_id): # TODO Ersetzen
-        for entry in self.ids:
-            if entry.id == search_id:
-                return entry
-        return None  # Falls die ID nicht gefunden wurde
-
-    def get_track(self, track_id): # TODO Ersetzen
-        for entry in self.tracks:
-            if entry.id == track_id:
-                return entry
-        return None
-
 
 class Track:
 
@@ -93,9 +193,10 @@ class Track:
         self.id = track_id  # Eindeutige ID
         self.center = [(box[0] + box[2] // 2), (box[1] + box[3] // 2)]  # Mittelpunkt der Box
         self.mean_shift = [[0, 0]]  # Bewegungsgeschichte (Verschiebung)
-        self.trace = []  # Historie der Positionen
+        self.trace = [[self.center]]  # Historie der Positionen
         self.skipped_frames = 0
         self.lost = False
+        self.updated = True
 
     def update(self, prev_gray, frame_gray, fgmask, contours, lk_params, vis=None):
         buffer = 20
@@ -111,7 +212,7 @@ class Track:
         valid_points, previous_points = self._filter_valid_points(p1, st, p0, fgmask) # features
 
         if len(valid_points) > 10:
-            self.lost = False
+
             movement = valid_points - previous_points
             mean_shift = np.mean(movement, axis=0)
 
@@ -156,17 +257,20 @@ class Track:
             else:
                 new_box = (x + dx, y + dy, w, h)
 
-            # Update der Track-Eigenschaften
-            if contours:
+
+            if contours and cv.contourArea(max(contours, key=cv.contourArea)) > 30000.0:
                 self.hist = calculate_color_histogram(vis, new_box, contours)
             self.box = new_box
             self.features = valid_points.tolist()
-            self.mean_shift.append(mean_shift.tolist())
+            self.mean_shift.append(mean_shift)
             self.center = [(new_box[0] + new_box[2] // 2), (new_box[1] + new_box[3] // 2)]
-            self.trace.append(self.center)
+            self.trace.append([self.center])
+            self.skipped_frames = 0
+            #self.lost = False
+            #self.updated = True
         else:
-            self.skipped_frames += 1
             self.lost = True
+            self.skipped_frames += 1
 
     @staticmethod
     def _filter_valid_points(p1, st, features, fgmask):  # Nur Punkte in Roi werden als valid eingestuft
