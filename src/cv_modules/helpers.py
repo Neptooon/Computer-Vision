@@ -1,11 +1,14 @@
 import cv2 as cv
 import numpy as np
-
+from sklearn.metrics.pairwise import cosine_similarity
 
 def calculate_color_histogram(frame, box, contours):
     x, y, w, h = box
-    x = int(max(0, x))
-    y = int(max(0, y))
+    x = int(max(0, min(x, frame.shape[1] - 1)))
+    y = int(max(0, min(y, frame.shape[0] - 1)))
+    w = int(min(w, frame.shape[1] - x))
+    h = int(min(h, frame.shape[0] - y))
+
     roi = frame[y:y + h, x:x + w]
 
     # Erstellen einer Maske für die Konturen
@@ -24,9 +27,9 @@ def calculate_color_histogram(frame, box, contours):
     # Zeichnen der angepassten Konturen auf die Maske
     if adjusted_contours:
         cv.drawContours(mask, adjusted_contours, -1, 255, -1)
-    cv.imshow("frame", mask)
+    #cv.imshow("frame", mask)
     hsv_roi = cv.cvtColor(roi, cv.COLOR_BGR2HSV)
-    hist = cv.calcHist([hsv_roi], [0, 1], mask, [50, 60], [0, 180, 0, 256])
+    hist = cv.calcHist([hsv_roi], [0, 1, 2], mask, [90, 80, 80], [0, 180, 0, 256, 0, 256])
     cv.normalize(hist, hist, 0, 1, cv.NORM_MINMAX)
     return hist
 
@@ -141,4 +144,35 @@ def compute_iou(box_a, box_b):
 
     # IoU berechnen
     return intersection / union if union > 0 else 0.0
+
+
+def hog_descriptor_similarity(hog1, hog2):
+    return cosine_similarity(hog1.reshape(1, -1), hog2.reshape(1, -1))[0, 0]
+
+def calculate_hog_descriptor(frame, box):
+    """Berechnet den HOG-Deskriptor für den aktuellen Track."""
+    x, y, w, h = box
+    x = int(max(0, min(x, frame.shape[1] - 1)))
+    y = int(max(0, min(y, frame.shape[0] - 1)))
+    w = int(min(w, frame.shape[1] - x))
+    h = int(min(h, frame.shape[0] - y))
+
+    roi = frame[max(0, y):min(frame.shape[0], y + h), max(0, x):min(frame.shape[1], x + w)]
+    roi = cv.resize(roi, (64, 128))  # Standardgröße für HOG
+    hog = cv.HOGDescriptor()
+    return hog.compute(roi)
+
+def calculate_movement_similarity(track, detection):
+
+    track_center = np.array([track.center[0], track.center[1]])
+    detection_center = np.array([detection[0] + detection[2] // 2, detection[1] + detection[3] // 2])
+
+    # Euk. Diz
+    distance = np.linalg.norm(track_center - detection_center)
+    print("DIST",distance)
+
+    # Normalisieren
+    movement_sim = 1 / (1 + distance)  # Je näher, desto höher die Ähnlichkeit
+
+    return movement_sim
 
