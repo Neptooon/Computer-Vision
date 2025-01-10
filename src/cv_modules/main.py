@@ -48,7 +48,7 @@ class SingleObjectTrackingPipeline:
             #self.iou_metrik.get_iou_info(self.tracker.tracks, self.frame_counter)
             self.frame_counter += 1
             self.prev_gray = frame_gray
-            filtered_contours = merge_contours(filtered_contours)
+            #filtered_contours = merge_contours(filtered_contours)
             cv.drawContours(vis, filtered_contours, -1, (0, 255, 0), 2)
 
             cv.imshow('HOG', vis)

@@ -56,11 +56,11 @@ class Tracker:
                 features = [(px + x, py + y) for px, py in np.float32(features).reshape(-1, 2)]
                 self.tracks[track_indices[idx]].features = features
                 self.tracks[track_indices[idx]].box = (x, y, w, h)
-                self.tracks[track_indices[idx]].hog_deskriptor = calculate_hog_descriptor(frame, self.tracks[track_indices[idx]].box)
+                self.tracks[track_indices[idx]].hog_descriptor = calculate_hog_descriptor(frame, self.tracks[track_indices[idx]].box)
 
         print(f"Assignments: {assignments}")
 
-        cost_threshold = np.percentile(np.array(cost_matrix).flatten(), 80)
+        cost_threshold = np.percentile(np.array(cost_matrix).flatten(), 80) # TODO
 
         for idx in range(len(assignments)):
             if assignments[idx] != -1:
@@ -81,7 +81,7 @@ class Tracker:
             for idx in del_tracks:
                 if idx < len(self.tracks):
                     del self.tracks[idx]
-                    del assignments[idx] # TODO Macht das überhaupt Sinn ?
+                    del assignments[idx]
                 else:
                     pass
 
@@ -97,9 +97,8 @@ class Tracker:
 
         for i in range(len(assignments)):
             if assignments[i] != -1:
-                self.tracks[i].skipped_frames = 0
-                self.tracks[i].lost = False
-
+                self.tracks[assignments[i]].skipped_frames = 0
+                #self.tracks[i].lost = False
 
 
     def setup_matrix(self, detections, contours, vis):
@@ -110,27 +109,15 @@ class Tracker:
         for track in self.tracks:
             costs = []
             for detection in detections:
-                #detection_center = [detection[0] + detection[2] // 2, detection[1] + detection[3] // 2]
-                #iou = compute_iou(track.box, detection)
-                #print("HISTOGRAMM", track.hist)
-                #print("DETEKTION", calculate_color_histogram(vis, detection, contours))
                 hist_sim = compare_histograms(calculate_color_histogram(vis, detection, contours), track.hist)
                 hog_sim = hog_descriptor_similarity(track.hog_descriptor, calculate_hog_descriptor(vis, detection))
                 movement_sim = calculate_movement_similarity(track, detection)
-                #print(np.array(track.trace[-1:]), "------------", np.array([detection_center]))
-                #center_dist = np.linalg.norm(np.array(track.trace[-1:]) - np.array([detection_center]))
-                #print("TRACKER CENTER", track.trace[-1:], "-----------", "Detection Center", detection_center)
-                #print("Distanz", center_dist)
-                #flow = np.linalg.norm(track.mean_shift[-1:] - (np.array(track.trace[-1:]) - np.array([detection_center])))
-                #print("FLOW", flow)
-                #cost = hog_sim
+
                 total_cost = (0.4 * hist_sim) + (0.5 * hog_sim) + (0.1 * movement_sim)
 
                 costs.append(total_cost)
             cost_matrix.append(costs)
 
-        #cost_matrix = (0.5) * np.array(cost_matrix)
-        #print("Kostenmatrix", cost_matrix)
         if len(cost_matrix) == 0 or len(cost_matrix[0]) == 0:
             return []
         print(f"Kostenmatrix: {cost_matrix}")
