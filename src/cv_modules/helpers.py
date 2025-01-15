@@ -111,9 +111,9 @@ def draw_features(vis, tracks):  # Feature zeichnen
         for track in tracks:
             if track.center is not None and not track.lost:
                 cv.circle(vis, (int(track.center[0]), int(track.center[1])), 2, (0, 0, 255), 2)
-            if track.features is not None and not track.lost:
-                for point in track.features:
-                    cv.circle(vis, (int(point[0]), int(point[1])), 2, (132 // track.id, 0, 255 // track.id), 2)
+            if track.features is not None and not track.lost and False:
+                for point in track.sift_keypoints:
+                    cv.circle(vis, (int(point.pt[0]), int(point.pt[0])), 2, (132 // track.id, 0, 255 // track.id), 2)
 
 
 def compute_iou(box_a, box_b):

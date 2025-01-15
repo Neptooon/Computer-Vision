@@ -24,8 +24,9 @@ class SingleObjectTrackingPipeline:
         self.tracking_counter = 0
         self.empty = 0
 
-    def run(self):
 
+    def run(self):
+        lock = 0
         while True:
             ret, frame = self.cap.read()
             if not ret:
@@ -38,13 +39,18 @@ class SingleObjectTrackingPipeline:
             contours, _ = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
             filtered_contours = [contour for contour in contours if cv.contourArea(contour) >= 1000]
 
-            if self.frame_counter % 5 == 0:
+            if self.frame_counter % 5 == 0 and lock < 1:
                 boxes = self.detector.detect(frame, fgmask)
-                self.tracker.update2(boxes, frame_gray, vis, filtered_contours)
+                if len(self.tracker.tracks) > 0:
+                    lock += 1
+                self.tracker.update2(boxes, frame_gray, vis, filtered_contours, fgmask)
             self.tracker.update_tracks(self.prev_gray, frame_gray, fgmask, filtered_contours, vis)
 
             draw_features(vis, self.tracker.tracks)
             draw_boxes(vis, self.tracker.tracks)
+            #if len(self.tracker.tracks) > 0:
+                #vis = cv.drawKeypoints(vis, self.tracker.tracks[0].sift_keypoints, None, flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+
             #self.iou_metrik.get_iou_info(self.tracker.tracks, self.frame_counter)
             self.frame_counter += 1
             self.prev_gray = frame_gray
@@ -53,7 +59,7 @@ class SingleObjectTrackingPipeline:
 
             cv.imshow('HOG', vis)
             #cv.imshow('BG', fgmask)
-            key = cv.waitKey(10)
+            key = cv.waitKey(1)
 
             if key & 0xFF == 27:
                 break
