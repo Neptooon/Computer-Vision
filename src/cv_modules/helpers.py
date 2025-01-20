@@ -2,7 +2,7 @@ import cv2 as cv
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-def calculate_color_histogram(frame, box, contours):
+def calculate_color_histogram(frame, box, contours, fgmask):
     x, y, w, h = box
     x = int(max(0, min(x, frame.shape[1] - 1)))
     y = int(max(0, min(y, frame.shape[0] - 1)))
@@ -12,30 +12,31 @@ def calculate_color_histogram(frame, box, contours):
     roi = frame[y:y + h, x:x + w]
 
     # Erstellen einer Maske für die Konturen
-    mask = np.zeros(roi.shape[:2], dtype=np.uint8)
+    #mask = np.zeros(roi.shape[:2], dtype=np.uint8)
 
-    #mask = cv.UMat(np.zeros(roi.shape[:2], dtype=np.uint8))
+    mask = cv.UMat(np.zeros(roi.shape[:2], dtype=np.uint8))
     # Anpassen der Konturen relativ zur ROI
-    adjusted_contours = []
-    for cnt in contours:
-        cnt_adjusted = cnt - np.array([x, y])
-        # Überprüfen, ob der angepasste Konturpunkt innerhalb der ROI liegt
-        #if np.all((cnt_adjusted >= 0) & (cnt_adjusted < [w, h])):
-        cnt_adjusted = np.clip(cnt_adjusted, 0, [w - 1, h - 1]).astype(int)
-        adjusted_contours.append(cnt_adjusted)
+    if contours is not None:
+        adjusted_contours = []
+        for cnt in contours:
+            cnt_adjusted = cnt - np.array([x, y])
+            # Überprüfen, ob der angepasste Konturpunkt innerhalb der ROI liegt
+            #if np.all((cnt_adjusted >= 0) & (cnt_adjusted < [w, h])):
+            cnt_adjusted = np.clip(cnt_adjusted, 0, [w - 1, h - 1]).astype(int)
+            adjusted_contours.append(cnt_adjusted)
 
-    # Zeichnen der angepassten Konturen auf die Maske
-    if adjusted_contours:
-        cv.drawContours(mask, adjusted_contours, -1, 255, -1)
-    #cv.imshow("frame", mask)
+        # Zeichnen der angepassten Konturen auf die Maske
+        if adjusted_contours:
+            cv.drawContours(mask, adjusted_contours, -1, 255, -1)
+    cv.imshow("frame", mask)
     hsv_roi = cv.cvtColor(roi, cv.COLOR_BGR2HSV)
-    hist = cv.calcHist([hsv_roi], [0, 1, 2], mask, [90, 80, 80], [0, 180, 0, 256, 0, 256])
+    hist = cv.calcHist([hsv_roi], [0, 1], mask, [30, 32], [0, 180, 0, 256])
     cv.normalize(hist, hist, 0, 1, cv.NORM_MINMAX)
     return hist
 
 
 def compare_histograms(hist1, hist2):
-    return cv.compareHist(hist1, hist2, cv.HISTCMP_BHATTACHARYYA)
+    return cv.compareHist(hist1, hist2, cv.HISTCMP_BHATTACHARYYA)  # Kleiner umso besser
 
 
 def merge_contours(contours, max_gap=100):  # Merged gefundene Konturen zu einer konvexen Hülle zusammen
@@ -76,7 +77,7 @@ def merge_contours(contours, max_gap=100):  # Merged gefundene Konturen zu einer
 
         # Konvexe Hülle der gemerged Kontur
         hull = cv.convexHull(merged)
-        merged_contours.append(hull)
+        merged_contours.append(merged)
 
         '''epsilon = 0.001 * cv.arcLength(merged, True)
         approx = cv.approxPolyDP(merged, epsilon, True)
@@ -91,7 +92,7 @@ def merge_contours(contours, max_gap=100):  # Merged gefundene Konturen zu einer
 
 def draw_boxes(vis, tracks):  # Boxen zeichnen
     for track in tracks:
-        if not track.lost:
+        if not track.lost and track.box is not None:
             x, y, w, h = track.box
             x = int(x)
             y = int(y)
@@ -118,6 +119,8 @@ def draw_features(vis, tracks):  # Feature zeichnen
 
 def compute_iou(box_a, box_b):
     # Boxen (x, y, w, h) in (x1, y1, x2, y2)
+    if box_a is None or box_b is None:
+        return 0
 
     if any(val is None for val in box_a) or any(val is None for val in box_b):
         return None
@@ -147,18 +150,24 @@ def compute_iou(box_a, box_b):
 
 
 def hog_descriptor_similarity(hog1, hog2):
-    return cosine_similarity(hog1.reshape(1, -1), hog2.reshape(1, -1))[0, 0]
+    cos_sim = cosine_similarity(hog1.reshape(1, -1), hog2.reshape(1, -1))[0, 0]
 
-def calculate_hog_descriptor(frame, box):
+    return (cos_sim + 1) / 2  # Normalisiert zurück [0, 1] 1 = maximale Ähnlichkeit winkel zw. 2 Vektoren
+
+def calculate_hog_descriptor(frame, box, mask):
     """Berechnet den HOG-Deskriptor für den aktuellen Track."""
     x, y, w, h = box
     x = int(max(0, min(x, frame.shape[1] - 1)))
     y = int(max(0, min(y, frame.shape[0] - 1)))
     w = int(min(w, frame.shape[1] - x))
     h = int(min(h, frame.shape[0] - y))
+    #max(0, y):min(frame.shape[0], y + h), max(0, x):min(frame.shape[1], x + w)
+    roi = frame[y:y+h, x:x+w]
+    #roi_mask = mask[y:y+h, x:x+w]
 
-    roi = frame[max(0, y):min(frame.shape[0], y + h), max(0, x):min(frame.shape[1], x + w)]
+    #roi = cv.bitwise_and(roi, roi_mask)
     roi = cv.resize(roi, (64, 128))  # Standardgröße für HOG
+    #cv.imshow("", roi)
     hog = cv.HOGDescriptor()
     return hog.compute(roi)
 
@@ -168,11 +177,54 @@ def calculate_movement_similarity(track, detection):
     detection_center = np.array([detection[0] + detection[2] // 2, detection[1] + detection[3] // 2])
 
     # Euk. Diz
-    distance = np.linalg.norm(track_center - detection_center)
-    print("DIST",distance)
 
-    # Normalisieren
-    movement_sim = 1 / (1 + distance)  # Je näher, desto höher die Ähnlichkeit
+    distance = np.sqrt(
+        (track_center[0] - detection_center[0]) ** 2 +
+        (track_center[1] - detection_center[1]) ** 2
+    )
 
-    return movement_sim
+    return min(distance / 100, 1)
 
+def match_feature_cost(frame, detection, track, feature, matcher, mask, vis=None):
+    x, y, w, h = detection
+    x = int(max(0, min(x, frame.shape[1] - 1)))
+    y = int(max(0, min(y, frame.shape[0] - 1)))
+    w = int(min(w, frame.shape[1] - x))
+    h = int(min(h, frame.shape[0] - y))
+
+    roi = frame[y:y + h, x:x + w]
+
+    keypoints, descriptors = feature.detectAndCompute(roi, mask[y:y + h, x:x + w])
+
+    matches = matcher.match(track.orb_descriptors, descriptors)
+    if len(matches) == 0:
+        return 1, 0
+    threshold = 0.75 * max(m.distance for m in matches)
+    matches = [m for m in matches if m.distance < threshold]
+    if vis is not None:
+        temp_points = []
+        for kp in keypoints:
+            global_x = kp.pt[0] + x
+            global_y = kp.pt[1] + y
+            global_kp = cv.KeyPoint(global_x, global_y, kp.size, kp.angle, kp.response, kp.octave, kp.class_id)
+            temp_points.append(global_kp)
+        keypoints = temp_points
+        for match in matches:
+            if track.id == 1:
+                cv.circle(vis, (int(keypoints[match.trainIdx].pt[0]), int(keypoints[match.trainIdx].pt[1])), 2, (100 , 200, 100), 2)
+            if track.id == 2:
+                cv.circle(vis, (int(keypoints[match.trainIdx].pt[0]), int(keypoints[match.trainIdx].pt[1])), 2,
+                          (0, 0, 255), 2)
+
+    return 1-(len(matches)/(len(track.orb_descriptors) // 2)), len(matches)
+
+def merge_boxes(collisions):
+    valid_tracks = [track for track in collisions if track.box is not None]
+    if not valid_tracks:
+        return None
+    x_min = min([track.box[0] for track in valid_tracks])
+    y_min = min([track.box[1] for track in valid_tracks])
+    x_max = max([track.box[0] + track.box[2] for track in valid_tracks])
+    y_max = max([track.box[1] + track.box[3] for track in valid_tracks])
+
+    return (x_min, y_min, x_max - x_min, y_max - y_min)

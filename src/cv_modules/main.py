@@ -2,7 +2,7 @@ import cv2 as cv
 from src.metrics.IoU import IoUMetrik
 from src.cv_modules.BGS import BGS
 from src.cv_modules.detector import Detector
-from src.cv_modules.helpers import merge_contours, draw_boxes, draw_features
+from src.cv_modules.helpers import merge_contours, draw_boxes, draw_features, compute_iou
 from src.cv_modules.tracker import Tracker
 
 
@@ -23,6 +23,22 @@ class SingleObjectTrackingPipeline:
         self.detect_counter = 0
         self.tracking_counter = 0
         self.empty = 0
+        self.collision = []
+
+    def filter_contours(self,contours):
+        filtered = []
+        for contour in contours:
+            area = cv.contourArea(contour)
+            if area < 1000:
+                continue
+
+            x, y, w, h = cv.boundingRect(contour)
+            aspect_ratio = h / w
+
+            if 1.2 < aspect_ratio < 5.0: # 1.2
+
+                filtered.append(contour)
+        return filtered
 
     def run(self):
 
@@ -36,24 +52,38 @@ class SingleObjectTrackingPipeline:
             fgmask = self.bgs.bgs_apply(frame)
 
             contours, _ = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-            filtered_contours = [contour for contour in contours if cv.contourArea(contour) >= 1000]
+            filtered_contours = self.filter_contours(contours)
 
-            if self.frame_counter % 5 == 0:
+            if self.frame_counter % 3 == 0:
                 boxes = self.detector.detect(frame, fgmask)
-                self.tracker.update2(boxes, frame_gray, vis, filtered_contours)
-            self.tracker.update_tracks(self.prev_gray, frame_gray, fgmask, filtered_contours, vis)
+
+                """det = []
+                if len(boxes) > 0 and len(self.tracker.tracks) > 0 and len(self.collision) > 0:
+                    for track in self.tracker.tracks:
+                        for detection in boxes:
+                            if compute_iou(track.box, detection) > 0.1:
+                                continue
+                            else:
+                                det.append(detection)
+                elif len(boxes) > 0:
+                    det = boxes"""
+                self.tracker.update2(boxes, frame_gray, vis, filtered_contours, fgmask)
+            #self.collision = self.tracker.check_collision() # TODO HIER
+            if self.prev_gray is not None:
+                self.tracker.update_tracks(self.prev_gray, frame_gray, fgmask, filtered_contours, vis, self.collision, self.frame_counter)
+                print(f"Frame Count: {self.frame_counter}")
 
             draw_features(vis, self.tracker.tracks)
             draw_boxes(vis, self.tracker.tracks)
             #self.iou_metrik.get_iou_info(self.tracker.tracks, self.frame_counter)
             self.frame_counter += 1
             self.prev_gray = frame_gray
-            #filtered_contours = merge_contours(filtered_contours)
+
             cv.drawContours(vis, filtered_contours, -1, (0, 255, 0), 2)
 
             cv.imshow('HOG', vis)
             #cv.imshow('BG', fgmask)
-            key = cv.waitKey(10)
+            key = cv.waitKey(1)
 
             if key & 0xFF == 27:
                 break
@@ -66,6 +96,6 @@ class SingleObjectTrackingPipeline:
 
 
 if __name__ == "__main__":
-    pipeline = SingleObjectTrackingPipeline('../../assets/videos/ML3-DS-Dunkel-Tafel-LiveDemo.mov')
+    pipeline = SingleObjectTrackingPipeline('../../assets/videos/MOT-Livedemo1.mov')
     pipeline.run()
 

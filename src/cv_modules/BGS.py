@@ -10,6 +10,7 @@ class BGS: # BGS
 
     def bgs_apply(self, frame):
         fgmask = self.backgroundSubtraction.apply(frame)
+
         fgmask = cv.morphologyEx(fgmask, cv.MORPH_OPEN, self.kernel)
         fgmask = cv.morphologyEx(fgmask, cv.MORPH_CLOSE, self.kernel)
-        return cv.medianBlur(fgmask, 3)
+        return fgmask
