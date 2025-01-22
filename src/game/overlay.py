@@ -6,10 +6,10 @@ HEART = pygame.image.load('../../assets/sprites/heart.png')
 def draw_score(screen, players):  # Score des jewl. Spielers zeichnen
     for player in players:
         font = pygame.font.SysFont("arial", 26)
-        if player.name == 'Player1':
+        if player.name == 'Player1' and player.activated:
             score_text = font.render(f'{player.name}   Score: {player.score}', True, (0, 0, 255))
             screen.blit(score_text, (20, 20))
-        else:
+        elif player.name == 'Player2' and player.activated:
             score_text = font.render(f'{player.name}   Score: {player.score}', True, (255, 0, 0))
             screen.blit(score_text, (screen.get_width() - score_text.get_width() - 20, 20))
 
@@ -17,10 +17,10 @@ def draw_score(screen, players):  # Score des jewl. Spielers zeichnen
 def draw_hp(screen, players):  # Hp des jewl. Spielers zeichnen
 
     for player in players:
-        if player.name == 'Player1':
+        if player.name == 'Player1' and player.activated:
             for i in range(player.health):
                 screen.blit(pygame.transform.scale(HEART, (60, 60)), (20 + i * 35, 50))
-        else:
+        elif player.name == 'Player2' and player.activated:
             for i in range(player.health):
                 screen.blit(pygame.transform.scale(HEART, (60, 60)), (screen.get_width() - 40 - (i + 1) * 35, 50))
 
@@ -59,3 +59,44 @@ def draw_game_over(screen):  # Game Over Screen zeichnen
     screen.blit(restart_text, (screen.get_width() // 2 - restart_text.get_width() // 2, screen.get_height() // 2 + 50))
     screen.blit(escape_text, (screen.get_width() // 2 - escape_text.get_width() // 2, screen.get_height() // 2 + 150))
     pygame.display.update()
+
+
+def draw_start_screen(screen):
+
+    font_title = pygame.font.SysFont("arial", 72)
+    font_button = pygame.font.SysFont("arial", 36)
+
+    bg = pygame.image.load('../../assets/images/background.png')
+    bg = pygame.transform.scale(bg, (screen.get_width(), screen.get_height()))
+    screen.blit(bg, [0,0])
+    title_text = font_title.render("Computer Vision Game", True, (0, 0, 0))
+    screen.blit(title_text, (screen.get_width() // 2 - title_text.get_width() // 2, screen.get_height() // 3))
+    play_button_text = font_button.render("Space to Start", True, (0, 0, 0))
+    button_rect = pygame.Rect(screen.get_width() // 2 - 100, screen.get_height() // 2, 200, 60)
+    pygame.draw.rect(screen, (0, 255, 255), button_rect)
+    screen.blit(play_button_text, (button_rect.x + button_rect.width // 2 - play_button_text.get_width() // 2,
+                                   button_rect.y + button_rect.height // 2 - play_button_text.get_height() // 2))
+    pygame.display.flip()
+
+    waiting = True
+    while waiting:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    waiting = False
+
+def draw_countdown(screen, countdown_seconds=3):
+
+    font = pygame.font.SysFont("arial", 96)
+
+    for i in range(countdown_seconds, 0, -1):
+        bg = pygame.image.load('../../assets/images/background.png')
+        bg = pygame.transform.scale(bg, (screen.get_width(), screen.get_height()))
+        screen.blit(bg, [0, 0])
+        countdown_text = font.render(str(i), True, (0, 0, 0))
+        screen.blit(countdown_text, (screen.get_width() // 2 - countdown_text.get_width() // 2,
+                                     screen.get_height() // 2 - countdown_text.get_height() // 2))
+        pygame.display.flip()
+        pygame.time.wait(1000)

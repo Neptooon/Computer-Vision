@@ -13,13 +13,13 @@ import numpy as np
 import pygame
 import generator as Generator
 import overlay as Overlay
-from game_tracker import SingleObjectTrackingPipeline
+from src.cv_modules.main import MultipleObjectTrackingPipeline
 
 
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 720
-SCREEN = [SCREEN_WIDTH, SCREEN_HEIGHT]
-
+#SCREEN_WIDTH = 1280
+#SCREEN_WIDTH = cv.CAP_PROP_FRAME_WIDTH
+#SCREEN_HEIGHT = 720
+#SCREEN_HEIGHT = cv.CAP_PROP_FRAME_HEIGHT
 
 class Player(pygame.sprite.Sprite):
     # init class
@@ -29,27 +29,38 @@ class Player(pygame.sprite.Sprite):
         self.rect = self.surf.get_rect()
         # start at screen center
         self.image = self.surf
-        self.health = 4
+        self.health = 1
         self.score = 0
         self.name = name
+        self.activated = False
 
 
     # updated die bbox
-    def update_box_position(self, x, y, w, h):
-
+    def update_box_position(self, track):
+        x, y, w, h = track.box
+        x = int(x)
+        y = int(y)
+        w = int(w)
+        h = int(h)
         self.rect.update(x, y, w, h)
         self.surf = pygame.Surface((w, h), pygame.SRCALPHA)
-        pygame.draw.rect(self.surf, (255, 0, 0), (0, 0, w, h), 6)  # Grünen Rahmen zeichnen
+        if track.id == 1:
+            pygame.draw.rect(self.surf, (0, 0, 255), (0, 0, w, h), 6)  # Grünen Rahmen zeichnen
+        else:
+            pygame.draw.rect(self.surf, (255, 0, 0), (0, 0, w, h), 6)  # Grünen Rahmen zeichnen
+        font = pygame.font.Font(None, 36)
+        text = font.render(str(track.id), True, (0, 0, 0))
+
+
+        self.surf.blit(text, (5,5))
+
         self.image = self.surf
 
-
     # Checked die tracks und leitet die bbox weiter
-    def update(self, pipeline):
+    def update(self, track):
+        if track.box is not None:
+            self.update_box_position(track)
 
-        if len(pipeline.tracker.box_tracks) > 0:
-            for track in pipeline.tracker.box_tracks:
-                x, y, w, h = track["box"]
-                self.update_box_position(x, y, w, h)
 
     # Spieler catched frucht
     def catch_fruit(self, fruit):
@@ -70,14 +81,18 @@ pygame.init()
 
 # set display size, caption & init time
 pygame.display.set_caption("Computer Vision Game")
-fps = 30
+fps = 60
 clock = pygame.time.Clock()
 
 # opencv - init webcam capture & set width & height
-cap = cv.VideoCapture(0)
-cap.set(cv.CAP_PROP_FRAME_WIDTH, SCREEN_WIDTH)
-cap.set(cv.CAP_PROP_FRAME_HEIGHT, SCREEN_HEIGHT)
+cap = cv.VideoCapture('../../assets/videos/MOT-Livedemo1.mov')
+SCREEN_WIDTH = cap.get(cv.CAP_PROP_FRAME_WIDTH)
+SCREEN_HEIGHT = cap.get(cv.CAP_PROP_FRAME_HEIGHT)
 screen = pygame.display.set_mode([SCREEN_WIDTH,SCREEN_HEIGHT])
+
+#cap.set(cv.CAP_PROP_FRAME_WIDTH, screen.get_width())
+#cap.set(cv.CAP_PROP_FRAME_HEIGHT, screen.get_height())
+
 
 def start_game(): # Startet Spieltimer
 
@@ -96,20 +111,24 @@ def stop_game(player): # Stop Game / Game Over für den übergebenen Spieler
                 if event.key == pygame.K_ESCAPE:
                     pygame.quit()
                 if event.key == pygame.K_r:
-                    main()  # Restart
+                    main()
                     waiting = False
 
 
 def main():
 
+    Overlay.draw_start_screen(screen)
+    Overlay.draw_countdown(screen)
+
     start_time = start_game()
 
-    player1 = Player('Player1')  # Spieler Anzahl erstmal auf 1 da SOT: Todo in MOT Spieler dynamisch erstellen
-    #player2 = Player('Player2')
+
+    player1 = Player('Player1')
+    player2 = Player('Player2')
 
 
     #Gruppen
-    players = pygame.sprite.Group(player1)
+    players = pygame.sprite.Group(player1, player2)
     fruits = pygame.sprite.Group()
     bombs = pygame.sprite.Group()
 
@@ -122,7 +141,7 @@ def main():
     )
 
     #Tracking Pipeline
-    pipeline = SingleObjectTrackingPipeline(cap)
+    pipeline = MultipleObjectTrackingPipeline(cap)
 
     running = True
 
@@ -141,7 +160,7 @@ def main():
         ret, cameraFrame = cap.read()
         if cameraFrame is None:
             break
-        cameraFrame = pipeline.tracker_run(cameraFrame) # Tracking Starten
+        cameraFrame = pipeline.run(cameraFrame) # Tracking Starten
 
         imgRGB = cv.cvtColor(cameraFrame, cv.COLOR_BGR2RGB)
         # image needs to be rotated for pygame
@@ -151,7 +170,14 @@ def main():
 
         screen.blit(gameFrame, (0, 0))
 
-        player1.update(pipeline)  # Spieler Updaten
+        for track in pipeline.tracker.tracks:
+            if track.id == 1 and not track.lost:
+                player1.update(track)  # Spieler Updaten
+                player1.activated = True
+            elif track.id == 2 and not track.lost:
+                player2.update(track)  # Spieler Updaten
+                player2.activated = True
+
 
         # Früchte und Bomben generieren
         new_fruit = generator.generate_fruit()
@@ -168,17 +194,22 @@ def main():
 
         # Frucht/Bomben Kollision
         for fruit in fruits:
-            if pygame.sprite.spritecollide(fruit, players, False):
+            if player1.rect.colliderect(fruit.rect):
                 player1.catch_fruit(fruit)
+            if player2.rect.colliderect(fruit.rect):
+                player2.catch_fruit(fruit)
 
         for bomb in bombs:
-            if pygame.sprite.spritecollide(bomb, players, False):
+            if player1.rect.colliderect(bomb.rect) and bomb.bomb_type == 'blue':
                 player1.catch_bomb(bomb)
+            if player2.rect.colliderect(bomb.rect) and bomb.bomb_type == 'red':
+                player2.catch_bomb(bomb)
 
         # Game Over Check
         for player in players:
             if player.health <= 0:
                 stop_game(player)
+
 
         # Früchte und Bomben zeichnen
         fruits.draw(screen)
@@ -199,6 +230,7 @@ def main():
     # quit
     pygame.quit()
     cap.release()
+
 
 
 if __name__ == "__main__":

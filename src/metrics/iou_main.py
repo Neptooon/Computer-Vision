@@ -1,7 +1,7 @@
 import os
 import json
 
-from src.cv_modules.main import SingleObjectTrackingPipeline
+from src.cv_modules.main import MultipleObjectTrackingPipeline
 
 
 video_folder = '../../assets/videos/single_detect_videos'  # Ordner mit Videos
@@ -16,7 +16,7 @@ def iou_results(video_folder):
             print(f"Aktuelles Video: {video_file}")
 
             # Pipeline
-            pipeline = SingleObjectTrackingPipeline(video_path)  # SOT ausführen
+            pipeline = MultipleObjectTrackingPipeline(video_path)  # SOT ausführen
             pipeline.run()
             pipeline.iou_metrik.save_data()  # Daten für Metrik erheben
             results_iou.append(pipeline.iou_metrik.tracking_data) # Speichern

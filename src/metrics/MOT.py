@@ -1,8 +1,8 @@
 import csv
 import cv2
 import motmetrics as mm
-
-class MOT_Evaluation:
+import numpy as np
+class MOTA_Metrik:
 
     def __init__(self, video):
         self.video = cv2.VideoCapture(video)
@@ -17,7 +17,7 @@ class MOT_Evaluation:
         with open(gt_file, 'r') as gt_file:
             reader = csv.reader(gt_file)
             for row in reader:
-                frame = int(row[0])  # Erste Spalte enthält die Frame-Nummer
+                frame = int(row[0])
                 frames.add(frame)
 
         return sorted(frames)
@@ -34,8 +34,7 @@ class MOT_Evaluation:
                 outfile.write(line)
 
     def motMetricsEnhancedCalculator(self, gtSource, tSource, frames):
-        # import required packages
-        import numpy as np
+
 
         # load ground truth
         gt = np.loadtxt(gtSource, delimiter=',')
@@ -43,24 +42,17 @@ class MOT_Evaluation:
         # load tracking output
         t = np.loadtxt(tSource, delimiter=',')
 
-        # Create an accumulator that will be updated during each frame
         acc = mm.MOTAccumulator(auto_id=True)
 
-        # Max frame number maybe different for gt and t files
         for frame in frames:
-            # detection and frame numbers begin at 1
 
-            # select id, x, y, width, height for current frame
-            # required format for distance calculation is X, Y, Width, Height \
-            # We already have this format
-            gt_dets = gt[gt[:, 0] == frame, 1:6]  # select all detections in gt
-            t_dets = t[t[:, 0] == frame, 1:6]  # select all detections in t
+            gt_dets = gt[gt[:, 0] == frame, 1:6]  # all detections in gt
+            t_dets = t[t[:, 0] == frame, 1:6]  # all detections in t
 
             C = mm.distances.iou_matrix(gt_dets[:, 1:], t_dets[:, 1:],
                                         max_iou=0.5)  # format: gt, t
 
-            # Call update once for per frame.
-            # format: gt object ids, t object ids, distance
+            # acc update
             acc.update(gt_dets[:, 0].astype('int').tolist(),
                        t_dets[:, 0].astype('int').tolist(), C)
 

@@ -2,7 +2,7 @@ import cv2 as cv
 import numpy as np
 
 from src.cv_modules.helpers import calculate_color_histogram, draw_boxes, draw_features, compare_histograms, \
-    compute_iou, hog_descriptor_similarity, calculate_hog_descriptor, calculate_movement_similarity, match_feature_cost, \
+    compute_iou, calculate_hog_descriptor, calculate_movement_similarity, match_feature_cost, \
     merge_boxes, merge_contours
 from scipy.optimize import linear_sum_assignment
 
@@ -13,7 +13,7 @@ class Tracker:
                               criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 20, 0.03))  # 15
         self.feature_params = dict(maxCorners=100, qualityLevel=0.01, minDistance=7, blockSize=7)  # 10 minDist
         self.tracks = []  # Liste von Track-Objekten
-        self.id_count = 1
+        self.id_count = [-1] * 2
 
     def start_new_track(self, detection, frame, vis, contours, mask):
         (x, y, w, h) = detection
@@ -30,11 +30,18 @@ class Tracker:
             p, hist = calculate_color_histogram(vis, detection, contours, mask)
             hog = calculate_hog_descriptor(frame, detection, mask)
 
-            new_track = Track(box=(x, y, w, h), features=features, hist=hist, track_id=self.id_count,
+            set_id = 0
+            for i, id in enumerate(self.id_count):
+                if id == -1:
+                    self.id_count[i] = 1
+                    set_id = i + 1
+                    break
+
+
+            new_track = Track(box=(x, y, w, h), features=features, hist=hist, track_id=set_id,
                               hog_deskriptor=hog)
             new_track.ref_box = (x, y, w, h)
 
-            self.id_count += 1
             return new_track
         return None
 
@@ -66,8 +73,8 @@ class Tracker:
                 f"TRACK {self.tracks[track_indices[idx]].id} -> {detection_indices[idx]} DETEKTION {detections[detection_indices[idx]]}")
 
 
-        cost_threshold = np.percentile(np.array(cost_matrix).flatten(), 80)  # TODO wenn nur 1 Track dann static
-        print("Kosten Threshold: ", cost_threshold)
+        cost_threshold = np.percentile(np.array(cost_matrix).flatten(), 80)
+
         for idx in range(len(assignments)):
             if assignments[idx] != -1:
                 if cost_matrix[idx][assignments[idx]] > cost_threshold:  # 50
@@ -78,7 +85,7 @@ class Tracker:
 
         del_tracks = []
         for idx in range(len(self.tracks)):
-            if self.tracks[idx].skipped_frames > 250:
+            if self.tracks[idx].skipped_frames > 150:
                 del_tracks.append(idx)
 
 
@@ -87,6 +94,7 @@ class Tracker:
                 if idx < len(self.tracks):
                     del self.tracks[idx]
                     del assignments[idx]
+                    self.id_count[idx] = -1
                 else:
                     pass
 
@@ -98,7 +106,7 @@ class Tracker:
         if len(unassigned_detections) != 0:
             for idx in range(len(unassigned_detections)):
                 if not any([True for track in self.tracks if
-                            compute_iou(track.box, detections[unassigned_detections[idx]]) > 0.0]):
+                            compute_iou(track.box, detections[unassigned_detections[idx]]) > 0.0]) and self.id_count.count(-1) >= 1:
                     new_track = self.start_new_track(detections[unassigned_detections[idx]], frame, vis, contours, mask)
                     self.tracks.append(new_track)
 
@@ -138,7 +146,6 @@ class Tracker:
                 # Histogrammähnlichkeit: kleiner ist besser
 
                 hog_sim = np.linalg.norm(calculate_hog_descriptor(frame_gray, detection, mask) - track.hog_descriptor)
-                # hog_sim = hog_descriptor_similarity(calculate_hog_descriptor(frame_gray, detection), track.hog_descriptor)
 
                 movement_cost = calculate_movement_similarity(track, detection)
 
@@ -166,7 +173,7 @@ class Tracker:
         y = int(y)
         w = int(w)
         h = int(h)
-        cv.rectangle(vis, (x, y), (x + w, y + h), (0, 0, 255), 5)
+        #cv.rectangle(vis, (x, y), (x + w, y + h), (0, 0, 255), 5)
 
         foreground_track = self.setup_collision_matrix(collisions, merged_box, contours, vis, frame_gray, mask)
 
@@ -303,14 +310,14 @@ class Track:
             historical_mean_shift = np.mean(self.mean_shift[-3:], axis=0) if len(self.mean_shift) > 3 else mean_shift
             smooth_shift = 0.8 * mean_shift + 0.2 * historical_mean_shift  # 0.5 0.5
 
-            self.draw_meanshift_vector(vis, self.box, smooth_shift)
+            #self.draw_meanshift_vector(vis, self.box, smooth_shift)
 
             # Box-Parameter aktualisieren
             x, y, w, h = self.box
             dx, dy = smooth_shift
             box_center = np.array([x + dx + w // 2, y + dy + h // 2])
 
-            self.draw_track(vis)
+            #self.draw_track(vis)
 
             # Neue dynamische Box berechnen
             valid_y_coords = valid_points[:, 1]
@@ -373,7 +380,7 @@ class Track:
             not np.all(fgmask[int(p[1]):int(p[1]) + 25, int(p[0]):int(p[0]) + 25] == 0) for p in valid_points
         ]
 
-        mask_filter = np.array(points_within_box) & np.array(points_in_fg)  # np.array(points_within_box) &
+        mask_filter = np.array(points_within_box, dtype=bool) & np.array(points_in_fg, dtype=bool)  # np.array(points_within_box) &
         # TODO:  return valid_points[mask_filter], previous_points[mask_filter]
         # IndexError: arrays used as indices must be of integer (or boolean) type
         return valid_points[mask_filter], previous_points[mask_filter]

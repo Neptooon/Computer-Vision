@@ -402,7 +402,7 @@ class SingleObjectTrackingPipeline:
         vis = frame.copy()
 
         frame_gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
-        fgmask = self.bgs.bgs_apply(frame)
+        fgmask = self.bgs.bgs_apply(frame_gray)
 
         if len(self.tracker.box_tracks) < 1: # Detektiert
 

@@ -1,7 +1,6 @@
 import cv2 as cv
 import numpy as np
 
-from helpers import compute_iou
 from imutils.object_detection import non_max_suppression
 
 class Detector: # Detektor

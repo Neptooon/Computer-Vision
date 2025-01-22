@@ -2,6 +2,8 @@ import cv2, numpy as np
 import argparse
 import os
 
+# Quelle: https://github.com/khalidw/MOT16_Annotator
+
 # Construct the argument parser
 ap = argparse.ArgumentParser()
 

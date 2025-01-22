@@ -27,7 +27,7 @@ def calculate_color_histogram(frame, box, contours, fgmask):
         # Zeichnen der angepassten Konturen auf die Maske
         if adjusted_contours:
             cv.drawContours(mask, adjusted_contours, -1, 255, -1)
-    cv.imshow(f"Track:", mask)
+
     num_white_pixels = cv.countNonZero(mask)
     hsv_roi = cv.cvtColor(roi, cv.COLOR_BGR2HSV)
     if num_white_pixels > 36000:
@@ -141,11 +141,6 @@ def compute_iou(box_a, box_b):
     # IoU berechnen
     return intersection / union if union > 0 else 0.0
 
-
-def hog_descriptor_similarity(hog1, hog2):
-    cos_sim = cosine_similarity(hog1.reshape(1, -1), hog2.reshape(1, -1))[0, 0]
-
-    return (cos_sim + 1) / 2  # Normalisiert zurück [0, 1] 1 = maximale Ähnlichkeit winkel zw. 2 Vektoren
 
 def calculate_hog_descriptor(frame, box, mask):
     """Berechnet den HOG-Deskriptor für den aktuellen Track."""
