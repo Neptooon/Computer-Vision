@@ -57,16 +57,6 @@ class SingleObjectTrackingPipeline:
             if self.frame_counter % 3 == 0:
                 boxes = self.detector.detect(frame, fgmask)
 
-                """det = []
-                if len(boxes) > 0 and len(self.tracker.tracks) > 0 and len(self.collision) > 0:
-                    for track in self.tracker.tracks:
-                        for detection in boxes:
-                            if compute_iou(track.box, detection) > 0.1:
-                                continue
-                            else:
-                                det.append(detection)
-                elif len(boxes) > 0:
-                    det = boxes"""
                 self.tracker.update2(boxes, frame_gray, vis, filtered_contours, fgmask)
             #self.collision = self.tracker.check_collision() # TODO HIER
             if self.prev_gray is not None:
@@ -82,7 +72,6 @@ class SingleObjectTrackingPipeline:
             cv.drawContours(vis, filtered_contours, -1, (0, 255, 0), 2)
 
             cv.imshow('HOG', vis)
-            #cv.imshow('BG', fgmask)
             key = cv.waitKey(1)
 
             if key & 0xFF == 27:

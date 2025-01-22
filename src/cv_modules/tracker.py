@@ -27,7 +27,7 @@ class Tracker:
         if features is not None:
             features = [(px + x, py + y) for px, py in np.float32(features).reshape(-1, 2)]
             contours = merge_contours(contours)
-            hist = calculate_color_histogram(vis, detection, contours, mask)
+            p, hist = calculate_color_histogram(vis, detection, contours, mask)
             hog = calculate_hog_descriptor(frame, detection, mask)
 
             new_track = Track(box=(x, y, w, h), features=features, hist=hist, track_id=self.id_count,
@@ -65,30 +65,26 @@ class Tracker:
             print(
                 f"TRACK {self.tracks[track_indices[idx]].id} -> {detection_indices[idx]} DETEKTION {detections[detection_indices[idx]]}")
 
-        print(f"Assignments: {assignments}")
 
         cost_threshold = np.percentile(np.array(cost_matrix).flatten(), 80)  # TODO wenn nur 1 Track dann static
         print("Kosten Threshold: ", cost_threshold)
         for idx in range(len(assignments)):
             if assignments[idx] != -1:
-                if cost_matrix[idx][assignments[idx]] > 0.6:  # 50
+                if cost_matrix[idx][assignments[idx]] > cost_threshold:  # 50
                     assignments[idx] = -1
                     unassigned.append(idx)
             else:
                 self.tracks[idx].skipped_frames += 1
 
-        print("Unzugewiesene Tracks: ", unassigned)
-
         del_tracks = []
         for idx in range(len(self.tracks)):
-            if self.tracks[idx].skipped_frames > 1000:
+            if self.tracks[idx].skipped_frames > 250:
                 del_tracks.append(idx)
 
 
         if len(del_tracks) > 0:
             for idx in del_tracks:
                 if idx < len(self.tracks):
-                    print(f"Track gelöscht {self.tracks[idx]}")
                     del self.tracks[idx]
                     del assignments[idx]
                 else:
@@ -104,13 +100,10 @@ class Tracker:
                 if not any([True for track in self.tracks if
                             compute_iou(track.box, detections[unassigned_detections[idx]]) > 0.0]):
                     new_track = self.start_new_track(detections[unassigned_detections[idx]], frame, vis, contours, mask)
-                    print(f"Neue Detektion zu neuem Track mit der id: {new_track.id}")
                     self.tracks.append(new_track)
 
         for idx in range(len(assignments)):
             if assignments[idx] != -1:
-                # if self.tracks[idx].lost:
-                print(f"Track geupdated mit der id: {self.tracks[idx].id}")
                 (x, y, w, h) = detections[assignments[idx]]
                 roi = frame[y:y + h, x:x + w]
                 features = cv.goodFeaturesToTrack(roi, **self.feature_params)
@@ -119,37 +112,29 @@ class Tracker:
                 self.tracks[idx].box = (x, y, w, h)
                 self.tracks[idx].lost = False
                 self.tracks[idx].skipped_frames = 0
+                self.tracks[idx].non_detects = 0
 
-                if contours and cv.contourArea(max(contours, key=cv.contourArea)) > 40000.0\
-                        and not any([True for track in self.tracks if self.tracks[idx] != track and compute_iou(track.box, detections[assignments[idx]]) > 0.0]):
+                if not any([True for track in self.tracks if self.tracks[idx] != track and compute_iou(track.box, detections[assignments[idx]]) > 0.0]):
                     self.tracks[idx].hog_descriptor = calculate_hog_descriptor(frame, self.tracks[idx].box, mask)
-                    self.tracks[idx].hist = calculate_color_histogram(vis, self.tracks[idx].box, contours, mask)  # TODO conturarea höher
-
-
-    """def filter_contours_in_area(self, contours, box):
-        
-        x, y, w, h = box
-        valid_contours = [
-            contour for contour in contours
-            if cv.boundingRect(contour)[0] >= x and
-               cv.boundingRect(contour)[1] >= y and
-               cv.boundingRect(contour)[0] + cv.boundingRect(contour)[2] <= x + w and
-               cv.boundingRect(contour)[1] + cv.boundingRect(contour)[3] <= y + h
-        ]
-        return valid_contours"""
-
+                    p, new_hist = calculate_color_histogram(vis, self.tracks[idx].box, contours, mask)
+                    if p >= 36000 or p<= 10000:
+                        self.tracks[idx].hist = new_hist
+            else:
+                self.tracks[idx].non_detects += 1
+                if self.tracks[idx].non_detects >= 15:
+                    self.tracks[idx].lost = True
 
     def setup_matrix(self, detections, contours, vis, frame_gray, mask):
 
         print(f"ANZ Tracks für Matrix: {self.tracks}")
         print(f"ANZ Deteks für Matrix: {detections}")
+
         cost_matrix = []
-        contours = merge_contours(contours)
         for track in self.tracks:
             costs = []
             for detection in detections:
-                hist_sim = compare_histograms(
-                    calculate_color_histogram(vis, detection, contours, mask), track.hist)
+                p, d_hist = calculate_color_histogram(vis, detection, contours, mask)
+                hist_sim = compare_histograms(d_hist, track.hist)
                 # Histogrammähnlichkeit: kleiner ist besser
 
                 hog_sim = np.linalg.norm(calculate_hog_descriptor(frame_gray, detection, mask) - track.hog_descriptor)
@@ -157,11 +142,11 @@ class Tracker:
 
                 movement_cost = calculate_movement_similarity(track, detection)
 
-                # Gewichte anpassen
+                # Gewichte anpassen 65 25 10
                 total_cost = (
-                        0.85 * hist_sim +
-                        0.10 * min(hog_sim / 100, 1) +
-                        0.05 * movement_cost
+                        0.65 * hist_sim +
+                        0.25 * min(hog_sim / 100, 1) +
+                        0.10 * movement_cost
                 )
 
                 costs.append(total_cost)
@@ -174,7 +159,6 @@ class Tracker:
 
     def handle_collision(self, collisions, contours, vis, frame_gray, mask):
         Track.count += 1
-        print(f" {Track.count} KOLLISION zwischen. {[col.id for col in collisions]}")
         merged_box = merge_boxes(collisions)
 
         x, y, w, h = merged_box
@@ -188,17 +172,15 @@ class Tracker:
 
         for track in collisions:
             if track.id == foreground_track.id:
-                print(f"Vordergrund Track: {track.id}")
                 track.lost = False
             else:
-                print(f"Track auf LOST: {track.id}")
                 track.lost = True  # Geht nicht mehr in update sondern muss neu detektiert werden
                 track.box = None
 
     def update_tracks(self, prev_gray, frame_gray, fgmask, contours, vis=None, collisions=None, counter=None):
 
-        if len(collisions) > 0:
-            self.handle_collision(collisions, contours, vis, frame_gray, fgmask)
+        #if len(collisions) > 0:
+            #self.handle_collision(collisions, contours, vis, frame_gray, fgmask)
 
         # TODO
         for track in self.tracks:
@@ -214,7 +196,6 @@ class Tracker:
             for j, track2 in enumerate(self.tracks):
                 if i >= j:  # Avoid duplicate checks
                     continue
-                print(f"IOU: {compute_iou(track1.box, track2.box)}")
                 if track1.box is not None and track2.box is not None and compute_iou(track1.box, track2.box) > 0.65:
                     collisions.add(track1)
                     collisions.add(track2)
@@ -227,7 +208,7 @@ class Tracker:
         contours = merge_contours(contours)
 
         # Berechne Eigenschaften für die Merged Box
-        merged_hist = calculate_color_histogram(vis, merged_box, contours, mask)
+        p, merged_hist = calculate_color_histogram(vis, merged_box, contours, mask)
         merged_hog_descriptor = calculate_hog_descriptor(frame_gray, merged_box, mask)
 
         for track in collisions:
@@ -270,6 +251,7 @@ class Track:
         self.lost = False
         self.hog_descriptor = hog_deskriptor
         self.ref_box = None
+        self.non_detects = 0
 
 
     def draw_track(self, frame):
@@ -302,6 +284,7 @@ class Track:
         buffer = 20
         alpha = 0.15
         min_height, min_width = 50, 50
+        x, y, w, h = self.box
 
         # Berechne optischen Fluss
 
@@ -310,9 +293,9 @@ class Track:
         p0, st0, err0 = cv.calcOpticalFlowPyrLK(frame_gray, prev_gray, p1, None, **lk_params)
 
         # Filtere valide Punkte
-        valid_points, previous_points = self._filter_valid_points(p1, st, p0, fgmask, self.box)  # features
+        valid_points, previous_points = self._filter_valid_points(p1, st, p0, fgmask, (x-40, y-40, w+80, h+80))  # features
 
-        if len(valid_points) > 10:
+        if len(valid_points) >= 10:
 
             movement = valid_points - previous_points
 
@@ -337,7 +320,7 @@ class Track:
             min_x = int(np.min(valid_x_coords)) - buffer
             max_x = int(np.max(valid_x_coords)) + buffer
             dynamic_height = min(max_y - min_y, self.ref_box[3])
-            dynamic_width = min(max_x - min_x, self.ref_box[2]) # Boxen kleiner machen
+            dynamic_width = min(max_x - min_x, self.ref_box[2])# Boxen kleiner machen
 
             if contours and len(collisions) == 0:
                 contour_centers = []
@@ -364,15 +347,6 @@ class Track:
                     new_box = (x + dx, y + dy, w, h)
             else:
                 new_box = (x + dx, y + dy, w, h)
-
-            # Beide Kollisionen Mergen
-            # Farbhistogramm berechnen für Mergen
-            # Mergen Histogramm mit einzelnen Farbhistogrammen vergleichen => Vordergrund Person
-
-            """if contours and cv.contourArea(max(contours, key=cv.contourArea)) > 40000.0 and len(collisions) == 0:
-                contours = merge_contours(contours)
-                self.hist = calculate_color_histogram(vis, new_box, contours, fgmask) # TODO Doppelt und raus
-                self.hog_descriptor = calculate_hog_descriptor(frame_gray, new_box, fgmask)"""
 
             self.features = valid_points.tolist()
             self.mean_shift.append(smooth_shift)

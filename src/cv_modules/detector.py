@@ -14,7 +14,7 @@ class Detector: # Detektor
 
         # Frame Down Samplen für schnellere Berechnung
         frame_down_sample = cv.resize(frame, ((frame.shape[1] // 40) * 10, (frame.shape[0] // 40) * 10))
-        boxes, weights = self.hog.detectMultiScale(frame_down_sample, winStride=(4, 4), padding=(8, 8),
+        boxes, weights = self.hog.detectMultiScale(frame_down_sample, winStride=(2, 2), padding=(4, 4),
                                                    scale=1.07, useMeanshiftGrouping=True)  # Je geringer das Scaling, desto weniger Boxen aber schneller
 
         #rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in boxes])

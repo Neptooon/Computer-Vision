@@ -13,7 +13,7 @@ def calculate_color_histogram(frame, box, contours, fgmask):
 
     # Erstellen einer Maske für die Konturen
     #mask = np.zeros(roi.shape[:2], dtype=np.uint8)
-
+    contours = merge_contours(contours)
     mask = cv.UMat(np.zeros(roi.shape[:2], dtype=np.uint8))
     # Anpassen der Konturen relativ zur ROI
     if contours is not None:
@@ -21,18 +21,21 @@ def calculate_color_histogram(frame, box, contours, fgmask):
         for cnt in contours:
             cnt_adjusted = cnt - np.array([x, y])
             # Überprüfen, ob der angepasste Konturpunkt innerhalb der ROI liegt
-            #if np.all((cnt_adjusted >= 0) & (cnt_adjusted < [w, h])):
             cnt_adjusted = np.clip(cnt_adjusted, 0, [w - 1, h - 1]).astype(int)
             adjusted_contours.append(cnt_adjusted)
 
         # Zeichnen der angepassten Konturen auf die Maske
         if adjusted_contours:
             cv.drawContours(mask, adjusted_contours, -1, 255, -1)
-    cv.imshow("frame", mask)
+    cv.imshow(f"Track:", mask)
+    num_white_pixels = cv.countNonZero(mask)
     hsv_roi = cv.cvtColor(roi, cv.COLOR_BGR2HSV)
-    hist = cv.calcHist([hsv_roi], [0, 1], mask, [30, 32], [0, 180, 0, 256])
+    if num_white_pixels > 36000:
+        hist = cv.calcHist([hsv_roi], [0, 1], mask, [30, 32], [0, 180, 0, 256])
+    else:
+        hist = cv.calcHist([hsv_roi], [0, 1], None, [30, 32], [0, 180, 0, 256])
     cv.normalize(hist, hist, 0, 1, cv.NORM_MINMAX)
-    return hist
+    return num_white_pixels, hist
 
 
 def compare_histograms(hist1, hist2):
@@ -79,12 +82,6 @@ def merge_contours(contours, max_gap=100):  # Merged gefundene Konturen zu einer
         hull = cv.convexHull(merged)
         merged_contours.append(merged)
 
-        '''epsilon = 0.001 * cv.arcLength(merged, True)
-        approx = cv.approxPolyDP(merged, epsilon, True)
-        merged_contours.append(approx)'''
-
-        #merged_contours.append(merged)
-
         used[i] = True
 
     return merged_contours
@@ -104,10 +101,6 @@ def draw_boxes(vis, tracks):  # Boxen zeichnen
 
 
 def draw_features(vis, tracks):  # Feature zeichnen
-    '''for feature_list in features:
-        for i, point in enumerate(feature_list):
-            cv.circle(vis, (int(point[0]), int(point[1])), 2, (0, 255, 0), -1)'''
-
     if tracks is not None:
         for track in tracks:
             if track.center is not None and not track.lost:
@@ -161,7 +154,6 @@ def calculate_hog_descriptor(frame, box, mask):
     y = int(max(0, min(y, frame.shape[0] - 1)))
     w = int(min(w, frame.shape[1] - x))
     h = int(min(h, frame.shape[0] - y))
-    #max(0, y):min(frame.shape[0], y + h), max(0, x):min(frame.shape[1], x + w)
     roi = frame[y:y+h, x:x+w]
     #roi_mask = mask[y:y+h, x:x+w]
 
