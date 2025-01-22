@@ -1,7 +1,7 @@
 import os
 import json
 
-from main import SingleObjectTrackingPipeline
+from src.cv_modules.main import SingleObjectTrackingPipeline
 
 
 video_folder = '../../assets/videos/single_detect_videos'  # Ordner mit Videos

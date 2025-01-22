@@ -4,6 +4,9 @@ from src.cv_modules.BGS import BGS
 from src.cv_modules.detector import Detector
 from src.cv_modules.helpers import merge_contours, draw_boxes, draw_features, compute_iou
 from src.cv_modules.tracker import Tracker
+from src.metrics.MOT import MOT_Evaluation
+
+
 
 
 class SingleObjectTrackingPipeline:
@@ -16,13 +19,12 @@ class SingleObjectTrackingPipeline:
         self.prev_gray = None
         self.width = self.cap.get(cv.CAP_PROP_FRAME_WIDTH)
         self.height = self.cap.get(cv.CAP_PROP_FRAME_HEIGHT)
+        self.mot = MOT_Evaluation(video_path)
+
 
 
         # Todo -- Nur für Metrik zwecke angelegt --
         self.frame_counter = 0
-        self.detect_counter = 0
-        self.tracking_counter = 0
-        self.empty = 0
         self.collision = []
 
     def filter_contours(self,contours):
@@ -41,6 +43,9 @@ class SingleObjectTrackingPipeline:
         return filtered
 
     def run(self):
+        gt_file = "../../assets/videos/gt/gt_MOT-Livedemo2.txt"
+        pd_file = "../../src/cv_modules/pd_MOT-InAndOut-Crossing.txt"
+        frames = self.mot.extract_frames(gt_file)
 
         while True:
             ret, frame = self.cap.read()
@@ -56,22 +61,26 @@ class SingleObjectTrackingPipeline:
 
             if self.frame_counter % 3 == 0:
                 boxes = self.detector.detect(frame, fgmask)
-
                 self.tracker.update2(boxes, frame_gray, vis, filtered_contours, fgmask)
-            #self.collision = self.tracker.check_collision() # TODO HIER
+
             if self.prev_gray is not None:
                 self.tracker.update_tracks(self.prev_gray, frame_gray, fgmask, filtered_contours, vis, self.collision, self.frame_counter)
                 print(f"Frame Count: {self.frame_counter}")
 
             draw_features(vis, self.tracker.tracks)
             draw_boxes(vis, self.tracker.tracks)
-            #self.iou_metrik.get_iou_info(self.tracker.tracks, self.frame_counter)
+
             self.frame_counter += 1
             self.prev_gray = frame_gray
+
+            """if self.frame_counter in frames:
+                self.mot.write_track_info("pd_MOT-Livedemo2.txt",self.tracker.tracks, self.frame_counter)"""
+
 
             cv.drawContours(vis, filtered_contours, -1, (0, 255, 0), 2)
 
             cv.imshow('HOG', vis)
+            #cv.imshow('BG', fgmask)
             key = cv.waitKey(1)
 
             if key & 0xFF == 27:
@@ -80,6 +89,7 @@ class SingleObjectTrackingPipeline:
             if key == ord('p'):
                 cv.waitKey(-1)
 
+        #self.mot.motMetricsEnhancedCalculator(gt_file, pd_file, frames)
         self.cap.release()
         cv.destroyAllWindows()
 
