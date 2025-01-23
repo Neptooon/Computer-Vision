@@ -9,10 +9,19 @@ import numpy as np
 class MOTA_Metrik:
 
     def __init__(self, video):
+        """
+            Args:
+                video (str): Pfad zum Video
+        """
         self.video = cv2.VideoCapture(video)
         self.frame_count = 0
 
     def extract_frames(self, gt_file):
+        """
+        Extrahiert nur die relevanten Frames die es auszuwerten gilt
+            Args:
+                gt_file (File): Ground-Truth File
+        """
 
         frames = set()
 
@@ -26,6 +35,14 @@ class MOTA_Metrik:
         return sorted(frames)
 
     def write_track_info(self, output_file, tracks, frame):
+        """
+        Zieht die relevanten Informationen der Tracks aus dem aktuellen Frame
+            Args:
+                 output_file (File): Ergebnisse
+                 tracks (list): Liste aus der Tracker Klasse
+                 frame (Frame): aktuelle Frame
+        """
+
 
         with open(output_file, 'a') as outfile:
             for track in tracks:
@@ -37,18 +54,29 @@ class MOTA_Metrik:
 
     def motMetricsEnhancedCalculator(self, gtSource, pdSource, frames, json_file_path, video_name):
 
-        # load ground truth
+        """
+        Berechnet die erweiterten MOTA-Metriken basierend auf Ground-Truth- und Prediction.
+            Args:
+                 gtSource: Pfad zur Ground-Truth-Datei im MOT16-Format.
+                 pdSource: Pfad zur Datei mit Tracking-Vorhersagen im MOT16-Format.
+                 frames: Liste der Frames, die analysiert werden sollen.
+                 json_file_path: Pfad zur JSON-Datei, in die die Ergebnisse geschrieben werden.
+                 video_name: Name des Videos, das ausgewertet wird.
+        """
+
+
+        # lädt ground truth
         gt = np.loadtxt(gtSource, delimiter=',')
 
-        # load tracking output
+        # lädt prediction output
         pd = np.loadtxt(pdSource, delimiter=',')
 
         acc = mm.MOTAccumulator(auto_id=True)
 
         for frame in frames:
 
-            gt_dets = gt[gt[:, 0] == frame, 1:6]  # all detections in gt
-            t_dets = pd[pd[:, 0] == frame, 1:6]  # all detections in pd
+            gt_dets = gt[gt[:, 0] == frame, 1:6]  # alle detections in gt
+            t_dets = pd[pd[:, 0] == frame, 1:6]  # alle detections in pd
 
             C = mm.distances.iou_matrix(gt_dets[:, 1:], t_dets[:, 1:],
                                         max_iou=0.5)  # format: gt, pd
@@ -110,7 +138,9 @@ class MOTA_Metrik:
         else:
             data = []
 
+        # Neue Ergebnisse anhängen
         data.append(results)
 
+        # Ergebnisse in die JSON-Datei schreiben
         with open(json_file_path, 'w') as json_file:
             json.dump(data, json_file, indent=4)

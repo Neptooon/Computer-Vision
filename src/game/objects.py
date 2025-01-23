@@ -29,7 +29,20 @@ BOMB_SPRITES = {
 
 # Früchte Klasse
 class Fruit(pygame.sprite.Sprite):
+    """
+    Klasse zur Darstellung und Verwaltung von Früchten im Spiel.
+    """
     def __init__(self, x, y, fruit_type, multiplier, base_value, depth=1.0):
+        """
+        Initialisiert eine Frucht.
+            Args:
+                x (int): Die x-Koordinate der Frucht.
+                y (int): Die y-Koordinate der Frucht.
+                fruit_type: Der Typ der Frucht (entspricht dem Schlüssel in FRUIT_SPRITES).
+                multiplier (float): Der Multiplikator für die Punkte der Frucht.
+                base_value (int): Der Basiswert der Frucht.
+                depth (float): Der Tiefenwert (steuert die Größe und Geschwindigkeit der Frucht).
+        """
         super(Fruit, self).__init__()
         scaling = 1.0 / depth
         fruit_width = 100 * scaling
@@ -54,18 +67,29 @@ class Fruit(pygame.sprite.Sprite):
 
     # Frucht update
     def update(self):
+        """
+        Aktualisiert die Position der Frucht und passt den Multiplikator an.
+
+        Args: None
+        """
         fall_speed = 4 / self.depth
         self.rect.y += fall_speed - 1
 
-        self.multiplier += (self.rect.y / SCREEN_HEIGHT) * 0.01  # Multiplier steigt je tiefer sie fällt
+        # Erhöhe den Multiplikator basierend auf der Fallhöhe
+        self.multiplier += (self.rect.y / SCREEN_HEIGHT) * 0.01
         self.render_multiplier()
 
+        # Entferne die Frucht, wenn sie aus dem Bildschirm fällt
         if self.rect.y > SCREEN_HEIGHT:
             self.kill()
 
-    # Rendern des Multipliers
-    def render_multiplier(self):
 
+    def render_multiplier(self):
+        """
+        Rendert den Multiplikator auf der Frucht.
+
+        Args: None
+        """
         self.image = pygame.transform.scale(FRUIT_SPRITES[self.fruit_type], (self.rect.width, self.rect.height))
 
         multiplier_text = f"{self.multiplier:.1f}x"
@@ -76,7 +100,21 @@ class Fruit(pygame.sprite.Sprite):
 
 # Bomben Klasse
 class Bomb(pygame.sprite.Sprite):
+    """
+    Klasse zur Darstellung und Verwaltung von Bomben im Spiel.
+    """
     def __init__(self, x, y, bomb_type, player, base_value, multiplier, depth=1.0):
+        """
+        Initialisiert eine Bombe.
+            Args:
+                 x (int): Die x-Koordinate der Bombe.
+                 y (int): Die y-Koordinate der Bombe.
+                 bomb_type: Der Typ der Bombe (entspricht dem Schlüssel in BOMB_SPRITES).
+                 player (str): Der Spieler, dem die Bombe zugeordnet ist.
+                 base_value (int): Der Basiswert der Bombe (abzuziehende Punkte).
+                 multiplier (float): Der Multiplikator für die Bombe.
+                 depth (float): Der Tiefenwert (steuert die Größe und Geschwindigkeit der Bombe).
+        """
         super(Bomb, self).__init__()
         scaling = 1.0 / depth
         bomb_width = 110 * scaling
@@ -101,6 +139,13 @@ class Bomb(pygame.sprite.Sprite):
 
     # Bomben update
     def update(self):
+        """
+        Aktualisiert die Position der Bombe und passt den Multiplikator an.
+        Wenn die Bombe aus dem Bildschirm fällt, wird die Gesundheit des Spielers reduziert
+        und Punkte werden abgezogen.
+
+        Args: None
+        """
         fall_speed = 4 / self.depth
         self.rect.y += fall_speed - 1
 
@@ -117,6 +162,11 @@ class Bomb(pygame.sprite.Sprite):
 
     # Rendern des Multi
     def render_multiplier(self):
+        """
+        Rendert den Multiplikator auf der Bombe.
+
+        Args: None
+        """
 
         self.image = pygame.transform.scale(BOMB_SPRITES[self.bomb_type], (self.rect.width, self.rect.height))
 

@@ -3,7 +3,13 @@ import pygame
 HEART = pygame.image.load('../../assets/sprites/heart.png')
 
 
-def draw_score(screen, players):  # Score des jewl. Spielers zeichnen
+def draw_score(screen, players):
+    """
+    Zeichnet die Punktzahl der aktiven Spieler auf den Bildschirm.
+        Args:
+            screen (Screen): Das pygame-Bildschirmobjekt.
+            players (Group): Liste von Spielerobjekten mit Attributen name, score, und activated.
+    """
     for player in players:
         font = pygame.font.SysFont("arial", 26)
         if player.name == 'Player1' and player.activated:
@@ -14,8 +20,13 @@ def draw_score(screen, players):  # Score des jewl. Spielers zeichnen
             screen.blit(score_text, (screen.get_width() - score_text.get_width() - 20, 20))
 
 
-def draw_hp(screen, players):  # Hp des jewl. Spielers zeichnen
-
+def draw_hp(screen, players):
+    """
+    Zeichnet die verbleibenden Lebenspunkte (HP) der Spieler in Form von Herzen.
+        Args:
+            screen (Screen): Das pygame-Bildschirmobjekt.
+            players (Group): Liste von Spielerobjekten mit Attributen name, health und activated.
+    """
     for player in players:
         if player.name == 'Player1' and player.activated:
             for i in range(player.health):
@@ -25,7 +36,13 @@ def draw_hp(screen, players):  # Hp des jewl. Spielers zeichnen
                 screen.blit(pygame.transform.scale(HEART, (60, 60)), (screen.get_width() - 40 - (i + 1) * 35, 50))
 
 
-def draw_game_time(screen, start_time):  # Spieltimer zeichnen
+def draw_game_time(screen, start_time):
+    """
+    Zeichnet den Spiel-Timer auf den Bildschirm.
+        Args:
+            screen (Screen): Das pygame-Bildschirmobjekt.
+            start_time (float): Die Startzeit des Spiels in Millisekunden.
+    """
     if start_time is not None:
 
         elapsed_time = pygame.time.get_ticks() - start_time
@@ -50,18 +67,36 @@ def draw_game_time(screen, start_time):  # Spieltimer zeichnen
         screen.blit(time_surface, (center_x, center_y))
 
 
-def draw_game_over(screen):  # Game Over Screen zeichnen
+def draw_game_over(screen, players):
+    """
+    Zeichnet den Game-Over-Bildschirm.
+        Args:
+            screen (Screen): Das pygame-Bildschirmobjekt.
+    """
     font = pygame.font.SysFont("arial", 60)
+
+    if players[0].score > players[1].score:
+        winner = 'Player1'
+    else:
+        winner = 'Player2'
+
     game_over_text = font.render("GAME OVER", True, (255, 0, 0))
+    winner_text = font.render(f"Winner: {winner}", True, (0, 255, 0))
     restart_text = font.render("R = Restart", True, (255, 255, 255))
     escape_text = font.render("ESC = Exit", True, (255, 255, 255))
     screen.blit(game_over_text, (screen.get_width() // 2 - game_over_text.get_width() // 2, screen.get_height() // 2 - 100))
-    screen.blit(restart_text, (screen.get_width() // 2 - restart_text.get_width() // 2, screen.get_height() // 2 + 50))
-    screen.blit(escape_text, (screen.get_width() // 2 - escape_text.get_width() // 2, screen.get_height() // 2 + 150))
+    screen.blit(winner_text, (screen.get_width() // 2 - winner_text.get_width() // 2, screen.get_height() // 2))
+    screen.blit(restart_text, (screen.get_width() // 2 - restart_text.get_width() // 2, screen.get_height() // 2 + 100))
+    screen.blit(escape_text, (screen.get_width() // 2 - escape_text.get_width() // 2, screen.get_height() // 2 + 200))
     pygame.display.update()
 
 
 def draw_start_screen(screen):
+    """
+    Zeichnet den Startbildschirm und wartet, bis der Spieler die Leertaste drückt.
+        Args:
+            screen (Screen): Das pygame-Bildschirmobjekt.
+    """
 
     font_title = pygame.font.SysFont("arial", 72)
     font_button = pygame.font.SysFont("arial", 36)
@@ -79,6 +114,7 @@ def draw_start_screen(screen):
     pygame.display.flip()
 
     waiting = True
+
     while waiting:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -88,6 +124,12 @@ def draw_start_screen(screen):
                     waiting = False
 
 def draw_countdown(screen, countdown_seconds=3):
+    """
+    Zeichnet einen Countdown auf den Bildschirm.
+        Args:
+            screen (Screen): Das pygame-Bildschirmobjekt.
+            countdown_seconds (int): Die Dauer des Countdowns in Sekunden (Standard: 3).
+    """
 
     font = pygame.font.SysFont("arial", 96)
 

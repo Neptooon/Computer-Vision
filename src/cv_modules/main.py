@@ -155,6 +155,6 @@ class MultipleObjectTrackingPipelineMetrik:
 
 # Hier ausführen, um das gegebene Video im Capture abzuspielen ohne die Spielintegration
 if __name__ == "__main__":
-    pipeline = MultipleObjectTrackingPipelineMetrik('../../assets/videos/MOT-Overlap-Turnaround1.mov')
+    pipeline = MultipleObjectTrackingPipelineMetrik('../../assets/videos/MOT-Crossing-Deluxe.mov')
     pipeline.run_metrik()
 
