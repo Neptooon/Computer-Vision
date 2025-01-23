@@ -13,17 +13,22 @@ import numpy as np
 import pygame
 import generator as Generator
 import overlay as Overlay
-from game_tracker import SingleObjectTrackingPipeline
-
-
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 720
-SCREEN = [SCREEN_WIDTH, SCREEN_HEIGHT]
+from src.cv_modules.main import MultipleObjectTrackingPipeline
 
 
 class Player(pygame.sprite.Sprite):
+    """
+        Repräsentiert einen Spieler im Spiel. Jeder Spieler ist mit einer Bounding Box verbunden,
+        die durch die Tracking-Daten aktualisiert wird.
+    """
     # init class
     def __init__(self,name):
+        """
+        Initialisiert den Spieler
+
+        Args:
+            name (str): name.
+        """
         super(Player, self).__init__()
         self.surf = pygame.Surface((0, 0), pygame.SRCALPHA)
         self.rect = self.surf.get_rect()
@@ -32,32 +37,72 @@ class Player(pygame.sprite.Sprite):
         self.health = 3
         self.score = 0
         self.name = name
+        self.activated = False
 
 
     # updated die bbox
-    def update_box_position(self, x, y, w, h):
+    def update_box_position(self, track):
 
-        self.rect.update(x, y, w, h)
-        self.surf = pygame.Surface((w, h), pygame.SRCALPHA)
-        pygame.draw.rect(self.surf, (255, 0, 0), (0, 0, w, h), 6)  # Grünen Rahmen zeichnen
-        self.image = self.surf
+        """
+        updated die Position der Box des jeweiligen Spielers
 
+        Args:
+            track (Track): Track Objekt
+        """
+        if not track.lost:
+            x, y, w, h = track.box
+            x = int(x)
+            y = int(y)
+            w = int(w)
+            h = int(h)
+            self.rect.update(x, y, w, h)
+            self.surf = pygame.Surface((w, h), pygame.SRCALPHA)
+            if track.id == 1:
+                pygame.draw.rect(self.surf, (0, 0, 255), (0, 0, w, h), 6)  # Blauen Rahmen zeichnen
+            else:
+                pygame.draw.rect(self.surf, (255, 0, 0), (0, 0, w, h), 6)  # Roten Rahmen zeichnen
+            font = pygame.font.Font(None, 36)
+            text = font.render(str(track.id), True, (0, 0, 0))
+            self.surf.blit(text, (5, 5))
 
-    # Checked die tracks und leitet die bbox weiter
-    def update(self, pipeline):
+            self.image = self.surf
+        else:
+            # BoundingBox entfernen
+            self.rect.update(0, 0, 0, 0)
+            self.surf = pygame.Surface((0, 0), pygame.SRCALPHA)
+            self.image = self.surf
 
-        if len(pipeline.tracker.box_tracks) > 0:
-            for track in pipeline.tracker.box_tracks:
-                x, y, w, h = track["box"]
-                self.update_box_position(x, y, w, h)
+    # updated den Spieler mit der jeweiligen Box des zugehörigen Tracks
+    def update(self, track):
+        """
+        Übergibt den Track
+
+        Args:
+            track (Track): Track Objekt
+        """
+        if track.box is not None:
+            self.update_box_position(track)
 
     # Spieler catched frucht
     def catch_fruit(self, fruit):
+        """
+        Berechnet den Wert der Frucht und schreibt sie dem Score des jeweiligen Spielers gut
+
+        Args:
+            fruit (Fruit): Fruit Objekt
+        """
+
         self.score += fruit.base_value + int(fruit.base_value * fruit.multiplier)
         fruit.kill()
 
     # Spieler catched bombe
     def catch_bomb(self, bomb):
+        """
+        Löscht gefangene Bombe
+
+        Args:
+            bomb (Bomb): Bomben Objekt
+        """
         bomb.kill()
 
 
@@ -68,24 +113,28 @@ class Player(pygame.sprite.Sprite):
 # init pygame
 pygame.init()
 
-# set display size, caption & init time
+# setzt display size, caption & init time
 pygame.display.set_caption("Computer Vision Game")
-fps = 30
+fps = 60
 clock = pygame.time.Clock()
 
 # opencv - init webcam capture & set width & height
 cap = cv.VideoCapture(0)
-cap.set(cv.CAP_PROP_FRAME_WIDTH, SCREEN_WIDTH)
-cap.set(cv.CAP_PROP_FRAME_HEIGHT, SCREEN_HEIGHT)
+SCREEN_WIDTH = 1280
+SCREEN_HEIGHT = 720
+
 screen = pygame.display.set_mode([SCREEN_WIDTH,SCREEN_HEIGHT])
 
-def start_game(): # Startet Spieltimer
+cap.set(cv.CAP_PROP_FRAME_WIDTH, SCREEN_WIDTH)
+cap.set(cv.CAP_PROP_FRAME_HEIGHT, SCREEN_HEIGHT)
 
+
+def start_game():  # Startet Spiel-Timer
     return pygame.time.get_ticks()
 
 
-def stop_game(player): # Stop Game / Game Over für den übergebenen Spieler
-    Overlay.draw_game_over(screen)
+def stop_game(players):  # Stoppt das Spiel oder Restarted es
+    Overlay.draw_game_over(screen, players) # Zeichnet Game Over Overlay
 
     waiting = True
     while waiting:
@@ -96,39 +145,44 @@ def stop_game(player): # Stop Game / Game Over für den übergebenen Spieler
                 if event.key == pygame.K_ESCAPE:
                     pygame.quit()
                 if event.key == pygame.K_r:
-                    main()  # Restart
+                    main()  # Neustart
                     waiting = False
 
 
 def main():
 
-    start_time = start_game()
+    Overlay.draw_start_screen(screen)  # Zeichnet Start Screen
+    Overlay.draw_countdown(screen)  # Zeichnet countdown
 
-    player1 = Player('Player1')  # Spieler Anzahl erstmal auf 1 da SOT: Todo in MOT Spieler dynamisch erstellen
-    #player2 = Player('Player2')
+    start_time = start_game()  # Startet das Game
+
+    # Spieler initialisieren
+    player1 = Player('Player1')
+    player2 = Player('Player2')
+    player_list = [player1, player2]
 
 
-    #Gruppen
-    players = pygame.sprite.Group(player1)
+    # Gruppen für Spieler, Früchte und Bomben
+    players = pygame.sprite.Group(player1, player2)
     fruits = pygame.sprite.Group()
     bombs = pygame.sprite.Group()
 
-    # Früchte und Bomben Generator
+    # Generator für Früchte und Bomben
     generator = Generator.ObjectGenerator(
         initial_fruit_interval=4.5,
         initial_bomb_interval=5.5,
-        screen_width=SCREEN_WIDTH,
-        screen_height=SCREEN_HEIGHT
+        screen_width=int(SCREEN_WIDTH),
+        screen_height=int(SCREEN_HEIGHT)
     )
 
-    #Tracking Pipeline
-    pipeline = SingleObjectTrackingPipeline(cap)
+    # Tracking-Pipeline initialisieren
+    pipeline = MultipleObjectTrackingPipeline(cap)
 
     running = True
 
-    #Main loop
+    # Hauptspiel-Loop
     while running:
-
+        # Ereignisverarbeitung
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -141,59 +195,74 @@ def main():
         ret, cameraFrame = cap.read()
         if cameraFrame is None:
             break
-        cameraFrame = pipeline.tracker_run(cameraFrame) # Tracking Starten
+
+        cameraFrame = pipeline.run(cameraFrame) # Tracking Starten
 
         imgRGB = cv.cvtColor(cameraFrame, cv.COLOR_BGR2RGB)
-        # image needs to be rotated for pygame
-        imgRGB = np.rot90(imgRGB)
-        # convert image to pygame and visualize
-        gameFrame = pygame.surfarray.make_surface(imgRGB).convert_alpha()
+
+        imgRGB = np.rot90(imgRGB) # Bild drehen
+
+        gameFrame = pygame.surfarray.make_surface(imgRGB).convert_alpha() # In pygame-Format konvertieren
 
         screen.blit(gameFrame, (0, 0))
 
-        player1.update(pipeline)  # Spieler Updaten
+        # Spieler mit Tracking-Daten aktualisieren
+        for track in pipeline.tracker.tracks:
+            if track.id == 1:
+                player1.update(track)  # Spieler Updaten
+                player1.activated = True
+            elif track.id == 2:
+                player2.update(track)  # Spieler Updaten
+                player2.activated = True
+
 
         # Früchte und Bomben generieren
         new_fruit = generator.generate_fruit()
         if new_fruit:
             fruits.add(new_fruit)
 
-        new_bomb = generator.generate_bomb(random.choice(list(players)))
-        if new_bomb:
+        player_choice = random.choice(list(players))
+        new_bomb = generator.generate_bomb(player_choice if player_choice.activated else None)
+        if new_bomb is not None:
             bombs.add(new_bomb)
 
         # Früchte und Bomben bewegen updaten etc.
         fruits.update()
         bombs.update()
 
-        # Frucht/Bomben Kollision
+        # Kollisionen überprüfen
         for fruit in fruits:
-            if pygame.sprite.spritecollide(fruit, players, False):
+            if player1.rect.colliderect(fruit.rect):
                 player1.catch_fruit(fruit)
+            if player2.rect.colliderect(fruit.rect):
+                player2.catch_fruit(fruit)
 
         for bomb in bombs:
-            if pygame.sprite.spritecollide(bomb, players, False):
+            if player1.rect.colliderect(bomb.rect) and bomb.bomb_type == 'blue':
                 player1.catch_bomb(bomb)
+            if player2.rect.colliderect(bomb.rect) and bomb.bomb_type == 'red':
+                player2.catch_bomb(bomb)
 
         # Game Over Check
         for player in players:
             if player.health <= 0:
-                stop_game(player)
+                stop_game(player_list)
 
-        # Früchte und Bomben zeichnen
+
+        # Objekte zeichnen
         fruits.draw(screen)
         bombs.draw(screen)
         players.draw(screen)
 
-        # rendern score & hp
+        # Overlay-Elemente (Score, Zeit, Gesundheit) anzeigen
         Overlay.draw_score(screen, players)
         Overlay.draw_hp(screen, players)
         Overlay.draw_game_time(screen, start_time)
 
-        # screen updaten
+        # Bildschirm aktualisieren
         pygame.display.flip()
 
-        # uhr
+        # framerate
         clock.tick(fps)
 
     # quit

@@ -1,520 +1,405 @@
 import cv2 as cv
 import numpy as np
-from IoU import IoUMetrik
 
-
-class BGS: # BGS
-    def __init__(self):
-        self.backgroundSubtraction = cv.createBackgroundSubtractorMOG2(detectShadows=True, varThreshold=75)  # 70
-        self.backgroundSubtraction.setBackgroundRatio(0.7)
-        self.backgroundSubtraction.setShadowValue(255)
-        self.backgroundSubtraction.setShadowThreshold(0.2)  # 0.3
-        self.kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (5, 5))
-
-    def bgs_apply(self, frame):
-        fgmask = self.backgroundSubtraction.apply(frame)
-        fgmask = cv.morphologyEx(fgmask, cv.MORPH_OPEN, self.kernel)
-        fgmask = cv.morphologyEx(fgmask, cv.MORPH_CLOSE, self.kernel)
-        return cv.medianBlur(fgmask, 3)
-
-
-class Detector: # Detektor
-    def __init__(self): # Hog-Deskriptor
-        self.hog = cv.HOGDescriptor()
-        self.hog.setSVMDetector(cv.HOGDescriptor_getDefaultPeopleDetector())
-
-    def detect(self, frame, fgmask):  # Detektiert Boxen und filtert die beste
-
-        # Frame Down Samplen für schnellere Berechnung
-        frame_down_sample = cv.resize(frame, ((frame.shape[1] // 25) * 10, (frame.shape[0] // 25) * 10))
-        boxes, weights = self.hog.detectMultiScale(frame_down_sample, winStride=(8, 8), padding=(8, 8),
-                                                   scale=1.07)  # 1.06 bzw 1.07
-        boxes = np.divide(boxes * 25, 10).astype(int)  # Up-sampling der Koordinaten
-        return self.filter_boxes(boxes, fgmask)
-
-    @staticmethod
-    def _inside(r, q):  # Wirft Boxen raus die innerhalb von anderen Boxen sind
-        rx, ry, rw, rh = r
-        qx, qy, qw, qh = q
-        return rx > qx and ry > qy and rx + rw < qx + qw and ry + rh < qy + qh
-
-    def filter_boxes(self, boxes, fgmask, min_area=1000):  # Filtert die Boxen
-
-        filtered_boxes = []
-        for ri, r in enumerate(boxes):
-            for qi, q in enumerate(boxes):
-                if ri != qi and self._inside(r, q):
-                    break
-            else:
-                filtered_boxes.append(r)
-                print("FILTER")
-        return [box for box in filtered_boxes if
-                np.count_nonzero(fgmask[box[1]:box[1] + box[3], box[0]:box[0] + box[2]]) > min_area]
-
-
-def merge_contours(contours, max_gap=100):  # Merged gefundene Konturen zu einer konvexen Hülle zusammen
-    if not contours:
-        return []
-
-    # Sortiert Konturen nach y-koordinaten der bbox
-    contours = sorted(contours, key=lambda cnt: cv.boundingRect(cnt)[1])
-
-    merged_contours = []
-    used = [False] * len(contours)  # Speichert gemerged Konturen
-
-    for i, contour_a in enumerate(contours):
-        if used[i]:
-            continue
-
-        # Bbox der 1. Kontur
-        x_a, y_a, w_a, h_a = cv.boundingRect(contour_a)
-        merged = contour_a
-
-        for j, contour_b in enumerate(contours[i + 1:], start=i + 1):
-            if used[j]:
-                continue
-
-            # Bbox der 2. Kontur
-            x_b, y_b, w_b, h_b = cv.boundingRect(contour_b)
-
-            # Merge Kriterium: vertikaler Abstand und horz. Überlappung
-            vertical_gap = y_b - (y_a + h_a)
-            horizontal_overlap = min(x_a + w_a, x_b + w_b) - max(x_a, x_b)
-
-            if vertical_gap <= max_gap and horizontal_overlap > 0:
-                # Beide Konturen Mergen
-                merged = np.vstack((merged, contour_b))
-                # Bbox updaten der gemerged Kontur
-                x_a, y_a, w_a, h_a = cv.boundingRect(merged)
-                used[j] = True
-
-        # Konvexe Hülle der gemerged Kontur
-        hull = cv.convexHull(merged)
-        merged_contours.append(hull)
-        used[i] = True
-
-    return merged_contours
+from src.cv_modules.helpers import calculate_color_histogram, compare_histograms, \
+    compute_iou, calculate_hog_descriptor, calculate_movement_similarity, \
+    merge_contours
+from scipy.optimize import linear_sum_assignment
 
 
 class Tracker:
+    """
+    Die Tracker-Klasse verfolgt Objekte über Frames hinweg.
+    """
     def __init__(self):
-        self.lk_params = dict(winSize=(21, 21), maxLevel=3,
-                              criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 15, 0.03))
-        self.feature_params = dict(maxCorners=100, qualityLevel=0.01, minDistance=10, blockSize=7)  # 21 bzw. 7
-        self.box_tracks = []
-        self.last_box_tracks = []
-        self.updated_box_tracks = []
-        self.last_partial_virt_box_tracks = []
-        self.lock = 1
-        self.virt_frame_counter = 0
+        """
+        Initialisiert die Tracker-Klasse mit Standardparametern und enthält eine Liste der zu verfolgenden Objekte / Tracks
+        """
+        self.lk_params = dict(winSize=(31, 31), maxLevel=4,  # Parameter für optischen Fluss
+                              criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 20, 0.03))
+        self.feature_params = dict(maxCorners=100, qualityLevel=0.01, minDistance=7, blockSize=7)  # Feature-Erkennung
+        self.tracks = [] # Liste der zu verfolgenden Objekte
+        self.id_count = [-1] * 2 # IDs der Tracks. Die Multiplikation ist die Anzahl der maximalen Personen die zugelassen werden.
+        # * 2 = 2 Personen und * 4 = 4 Personen ...
 
-    def reinitialize_features(self, frame_gray, box, contours=None):  # Feature werden alle X Frame reinitialisiert
-        x, y, w, h = box
+    def start_new_track(self, detection, frame, vis, contours):
+        """
+        Startet einen neuen Track für eine gegebene Detektion.
 
-        if contours is not None and len(contours) > 0:
-            # Initialisieren der kombinierten ROI mit der Box
-            roi_x_start, roi_y_start = x, y
-            roi_x_end, roi_y_end = x + w, y + h
+        Args:
+            detection (tuple): Bounding-Box der neuen Detektion (x, y, Breite, Höhe).
+            frame (numpy.ndarray): Aktueller Frame.
+            vis (numpy.ndarray): Visualisierungsframe.
+            contours (list): Konturen zur Maske.
+        Returns:
+            Track: Neuer Track, falls erfolgreich, sonst None.
+        """
+        (x, y, w, h) = detection
+        x = int(max(0, min(x, frame.shape[1] - 1)))
+        y = int(max(0, min(y, frame.shape[0] - 1)))
+        w = int(min(w, frame.shape[1] - x))
+        h = int(min(h, frame.shape[0] - y))
+        roi = frame[y:y + h, x:x + w]
 
-            for contour in contours:
-                if isinstance(contour, np.ndarray) and len(contour) > 0:
-                    # Konturkoordinaten berechnen
-                    contour_x, contour_y, contour_w, contour_h = cv.boundingRect(contour)
-                    # ROI erweitern basierend auf Konturen
-                    roi_x_start = min(roi_x_start, contour_x)
-                    roi_y_start = min(roi_y_start, contour_y)
-                    roi_x_end = max(roi_x_end, contour_x + contour_w)
-                    roi_y_end = max(roi_y_end, contour_y + contour_h)
-
-            # Begrenzungen
-            roi_x_start = max(0, roi_x_start)
-            roi_y_start = max(0, roi_y_start)
-            roi_x_end = min(frame_gray.shape[1], roi_x_end)
-            roi_y_end = min(frame_gray.shape[0], roi_y_end)
-        else:
-            # Wenn keine Kontur vorhanden ist nur Box verwenden
-            roi_x_start, roi_y_start, roi_x_end, roi_y_end = x, y, x + w, y + h
-
-        # Begrenzungen
-        roi_x_start = max(0, roi_x_start)
-        roi_y_start = max(0, roi_y_start)
-        roi_x_end = min(frame_gray.shape[1], roi_x_end)
-        roi_y_end = min(frame_gray.shape[0], roi_y_end)
-
-        # ROI aus Graustufenbild extrahieren
-        roi = frame_gray[roi_y_start:roi_y_end, roi_x_start:roi_x_end]
-
-        # Neue Features innerhalb der neuen ROI berechnen
         features = cv.goodFeaturesToTrack(roi, **self.feature_params)
-
-        # Features von ROI-Koordinaten in globale Bildkoordinaten umrechnen
         if features is not None:
-            return [(px + roi_x_start, py + roi_y_start) for px, py in np.float32(features).reshape(-1, 2)]
-        else:
-            return []
+            features = [(px + x, py + y) for px, py in np.float32(features).reshape(-1, 2)]
+            contours = merge_contours(contours)
+            p, hist = calculate_color_histogram(vis, detection, contours)
+            hog = calculate_hog_descriptor(frame, detection)
 
-    def init_tracks(self, boxes, frame_gray):  # Tracks initialisieren
+            # Überprüft welche ID frei zum Vergeben ist
+            set_id = 0
+            for i, id in enumerate(self.id_count):
+                if id == -1:
+                    self.id_count[i] = 1
+                    set_id = i + 1
+                    break
 
-        for (x, y, w, h) in boxes:
-            roi = frame_gray[y:y + h, x:x + w]  # ROI um Feature-Suche einzugrenzen
-            features = cv.goodFeaturesToTrack(roi, **self.feature_params)
-            if features is not None:
-                self.box_tracks.append(
-                    {
-                        "box": (x, y, w, h),
-                        "features": [(px + x, py + y) for px, py in np.float32(features).reshape(-1, 2)],
-                        "mean_shift": [[0, 0]],
-                        "center": [(x + (w // 2)), (y + (h // 2))]
-                    }
-                )
+            # Legt einen neuen Track an
+            new_track = Track(box=(x, y, w, h), features=features, hist=hist, track_id=set_id,
+                              hog_deskriptor=hog)
+            new_track.ref_box = (x, y, w, h)
 
-    def update_tracks(self, prev_gray, frame_gray, fgmask, contours, frame_counter, vis=None):  # Tracks updaten
+            return new_track
+        return None
 
-        if not contours:
+    def associate_tracks(self, detections, frame, vis, contours):
+        """
+        Aktualisiert bestehende Tracks oder erstellt neue basierend auf Detektionen.
+
+        Args:
+            detections (list): Liste der Bounding-Boxen der Detektionen.
+            frame (numpy.ndarray): Aktueller Frame.
+            vis (numpy.ndarray): Visualisierungsframe.
+            contours (list): Konturen zur Maske.
+
+        Beschreibung:
+        1. Wenn keine bestehenden Tracks vorhanden sind, werden neue Tracks für alle Detektionen erstellt.
+        2. Eine Kostenmatrix wird basierend auf Ähnlichkeitsmetriken zwischen bestehenden Tracks und Detektionen erstellt.
+        3. Das Zuordnungsproblem wird gelöst mithilfe des Hungarian-Algorithmus, um Tracks den Detektionen zuzuweisen.
+        4. Nicht zugewiesene Tracks werden als "skipped" markiert und gegebenenfalls entfernt.
+        5. Neue Tracks werden für Detektionen erstellt, die keinem bestehenden Track zugewiesen wurden.
+        6. Tracks werden mit neuen Features, Positionen und Histogrammen aktualisiert.
+
+        """
+
+        if len(self.tracks) == 0:
+            # Keine bestehenden Tracks, neue Tracks erstellen
+            for box in detections:
+                new_track = self.start_new_track(box, frame, vis, contours)
+                if new_track:
+                    self.tracks.append(new_track)
             return
 
-        points = []
-        min_height = 50  # Mindesthöhe der bbox
-        min_width = 50  # Mindestbreite der bbox
-        buffer = 20  # Puffer, um Featurepunkte vollständig einzuschließen
-        alpha = 0.15  # Glättungsfaktor um bbox Schwankung zu reduzieren
-        for i, track in enumerate(self.box_tracks):
-            box = track["box"]
-            features = np.float32(track["features"]).reshape(-1, 1, 2)
-            prev_mean_shift = track["mean_shift"]  # Vorherige durchsch. Verschiebung
+        # Kostenmatrix für die Zuordnung zwischen Tracks und Detektionen erstellen
+        cost_matrix = self.setup_matrix(detections, contours, vis, frame)
+        if not cost_matrix:
+            return
 
-            # Vorwärts- und Rückwärtsfluss
-            p1, st, err = cv.calcOpticalFlowPyrLK(prev_gray, frame_gray, features, None, **self.lk_params)
-            p0, st0, err0 = cv.calcOpticalFlowPyrLK(frame_gray, prev_gray, p1, None, **self.lk_params)
-            valid_points, previous_points = self._filter_valid_points(p1, st, p0, fgmask)  # Punkte in Roi behalten
+        assignments = [-1] * len(self.tracks)
+        unassigned = []
 
-            if len(valid_points) > 0:
-                # Durchschnittliche Verschiebung der Punkte
+        # Löse das Zuordnungsproblem
+        track_indices, detection_indices = linear_sum_assignment(cost_matrix)
 
-                points.append(valid_points)
-                movement = valid_points - previous_points
-                mean_shift = np.mean(movement, axis=0)
+        for idx in range(len(track_indices)):
+            assignments[track_indices[idx]] = detection_indices[idx]
 
-                x, y, w, h = box
-                dx, dy = mean_shift
-                # Berechne den neuen Mittelpunkt der bbox
-                box_center = np.array([x + dx + w // 2, y + dy + h // 2])
+        # Schwellenwert für die Kosten bestimmen
+        cost_threshold = np.percentile(np.array(cost_matrix).flatten(), 80)
 
-                #Feature-Punkte zur Höhenanpassung
-                valid_y_coords = valid_points[:, 1]
-                valid_x_coords = valid_points[:, 0]
-                min_y = int(np.min(valid_y_coords)) - buffer
-                max_y = int(np.max(valid_y_coords)) + buffer
-                min_x = int(np.min(valid_x_coords)) - buffer
-                max_x = int(np.max(valid_x_coords)) + buffer
+        # Tracks zu Detektionen zuordnen
+        for idx in range(len(assignments)):
+            if assignments[idx] != -1:
+                if cost_matrix[idx][assignments[idx]] > cost_threshold:
+                    assignments[idx] = -1
+                    unassigned.append(idx)
+            else:
+                self.tracks[idx].skipped_frames += 1
 
-                # Berechne dynamische Höhe basierend auf Feature-Punkten
-                dynamic_height = max(max_y - min_y, min_height)
-                dynamic_width = max(max_x - min_x, min_width)  # Breite bleibt stabil oder wird angepasst
+        # Entferne Tracks, die zu lange verschwunden sind
+        del_tracks = []
+        for idx in range(len(self.tracks)):
+            if self.tracks[idx].skipped_frames > 100:
+                del_tracks.append(idx)
 
-                # Konturen verwenden, um Mittelpunkt zu aktualisieren
+        # Tracks löschen
+        if len(del_tracks) > 0:
+            for idx in del_tracks:
+                if idx < len(self.tracks):
+                    del self.tracks[idx]
+                    del assignments[idx]
+                    self.id_count[idx] = -1
+                else:
+                    pass
 
-                if contours:
-                    filtered_contours = [contour for contour in contours if cv.contourArea(contour) >= 1000]
-                    self.lock = 1
-                    filtered_contours = merge_contours(filtered_contours)
+        # Neue Tracks für nicht zugewiesene Detektionen erstellen
+        unassigned_detections = []
+        for idx in range(len(detections)):
+            if idx not in assignments:
+                unassigned_detections.append(idx)
 
-                    # Todo Hier stand Virt
+        if len(unassigned_detections) != 0:
+            for idx in range(len(unassigned_detections)):
+                if not any([True for track in self.tracks if
+                            compute_iou(track.box, detections[unassigned_detections[idx]]) > 0.0]) and self.id_count.count(-1) >= 1:
+                    new_track = self.start_new_track(detections[unassigned_detections[idx]], frame, vis, contours)
+                    self.tracks.append(new_track)
 
-                    cv.drawContours(vis, filtered_contours, -1, (0, 0, 255), 2)
-                    if filtered_contours:
-                        contour_centers = []
+        # Aktualisiere bestehende Tracks mit neuen Informationen
+        for idx in range(len(assignments)):
+            if assignments[idx] != -1:
+                (x, y, w, h) = detections[assignments[idx]]
+                roi = frame[y:y + h, x:x + w]
+                features = cv.goodFeaturesToTrack(roi, **self.feature_params)
+                features = [(px + x, py + y) for px, py in np.float32(features).reshape(-1, 2)]
+                self.tracks[idx].features = features
+                self.tracks[idx].box = (x, y, w, h)
+                self.tracks[idx].lost = False
+                self.tracks[idx].skipped_frames = 0
+                self.tracks[idx].non_detects = 0
 
-                        for contour in filtered_contours:
-                            # Berechne jeden Schwerpunkt einer Kontur
-                            M = cv.moments(contour)
-                            cx = int(M["m10"] / (M["m00"] + 1e-5))  # x-Koordinate
-                            cy = int(M["m01"] / (M["m00"] + 1e-5)) - buffer  # y-Koordinate
-                            if min_x <= cx <= min_x + dynamic_width or min_y <= cy <= min_y + dynamic_height:
-                                contour_centers.append((cx, cy))
+                if not any([True for track in self.tracks if self.tracks[idx] != track and compute_iou(track.box, detections[assignments[idx]]) > 0.0]):
+                    self.tracks[idx].hog_descriptor = calculate_hog_descriptor(frame, self.tracks[idx].box)
+                    p, new_hist = calculate_color_histogram(vis, self.tracks[idx].box, contours)
+                    if p >= 36000 or p <= 10000:
+                        self.tracks[idx].hist = new_hist
+            else:
+                # Track als "nicht gefunden" markieren
+                self.tracks[idx].non_detects += 1
+                if self.tracks[idx].non_detects >= 15:
+                    self.tracks[idx].lost = True
 
-                        if contour_centers:
-                            # Euklidische Distanz zur aktuellen Box
-                            # Abstand zwischen dem Mittelpunkt der Box (box_center) und den Schwerpunkten der Konturen
-                            distances = [np.linalg.norm(np.array(center) - box_center) for center in contour_centers]
+    def setup_matrix(self, detections, contours, vis, frame_gray):
+        """
+        Erstellt die Kostenmatrix für die Zuordnung von Tracks zu Detektionen.
 
-                            # Gewichte basierend auf der Distanz
-                            weights = 1 / (np.array(distances) + 1e-5)  # Vermeidung von Division durch 0
-                            weights /= np.sum(
-                                weights)  # Normalisierung der Gewichte d.h immer 1 wenn nur 1 Kontur da ist
+        Args:
+            detections (list): Liste der Bounding-Boxen der Detektionen.
+            contours (list): Konturen
+            vis (numpy.ndarray): Visualisierungsframe.
+            frame_gray (numpy.ndarray): Graustufenbild des aktuellen Frames.
 
-                            # Gewichteten Mittelwert der Schwerpunkte berechnen
-                            weighted_center = np.sum(np.array(contour_centers) * weights[:, None], axis=0)
+        Returns:
+            list: Kostenmatrix, die die Ähnlichkeit zwischen Tracks und Detektionen beschreibt.
+        """
+        cost_matrix = []
+        for track in self.tracks:
+            costs = []
+            for detection in detections:
+                # Berechne Ähnlichkeit basierend auf Farb-Histogrammen
+                _, d_hist = calculate_color_histogram(vis, detection, contours)
+                hist_sim = compare_histograms(d_hist, track.hist)
+                # Berechne Ähnlichkeit basierend auf HOG-Deskriptoren
+                hog_sim = np.linalg.norm(calculate_hog_descriptor(frame_gray, detection) - track.hog_descriptor)
+                # Berechne Bewegungsähnlichkeit
+                movement_cost = calculate_movement_similarity(track, detection)
+                # Kombiniere die Ähnlichkeiten zu einer Gesamtmetrik
+                total_cost = (
+                        0.65 * hist_sim +
+                        0.25 * min(hog_sim / 100, 1) +
+                        0.10 * movement_cost
+                )
 
-                            # Glätttung zwischen aktuellem Box-Mittelpunkt und gewichtetem Schwerpunkt
-                            even_center = (1 - alpha) * box_center + alpha * weighted_center
-                            new_x = int(even_center[0] - dynamic_width // 2)
-                            new_y = int(even_center[1] - dynamic_height // 2)
+                costs.append(total_cost)
+            cost_matrix.append(costs)
 
-                            # Box updaten und wenn notwendig, Featurepunkte neu berechnen
-                            self.updated_box_tracks.append({
-                                "box": (new_x, new_y, dynamic_width, dynamic_height),
-                                "features": valid_points.tolist() if frame_counter % 5 != 0 else
-                                self.reinitialize_features(
-                                    frame_gray, (new_x, new_y, w, h), filtered_contours),
-                                "mean_shift": (prev_mean_shift := [[dx, dy]] if prev_mean_shift is None or len(
-                                    prev_mean_shift) > 25 else prev_mean_shift + [[dx, dy]]),
-                                "center": [new_x + dynamic_width // 2, new_y + dynamic_height // 2]
-                            })
+        if len(cost_matrix) == 0 or len(cost_matrix[0]) == 0:
+            return []
+        return cost_matrix
 
-        return points
+    def update_tracks(self, prev_gray, frame_gray, fgmask, contours):
+        """
+        Aktualisiert alle bestehenden Tracks
+
+        Args:
+            prev_gray (numpy.ndarray): Graustufenbild des vorherigen Frames.
+            frame_gray (numpy.ndarray): Graustufenbild des aktuellen Frames.
+            fgmask (numpy.ndarray): Vordergrundmaske.
+            contours (list): Konturen, die im aktuellen Frame enthalten sind.
+        """
+
+        for track in self.tracks:
+            if not track.lost:
+                track.update(prev_gray, frame_gray, fgmask, contours, self.lk_params)
+
+
+class Track:
+    """
+    Die Track-Klasse repräsentiert ein einzelnes Objekt, das über mehrere Frames hinweg verfolgt wird.
+    Sie kapselt die Eigenschaften des Objekts
+    """
+
+    def __init__(self, box, features, hist, track_id, hog_deskriptor):
+        self.box = box  # (x, y, w, h)
+        self.features = features  # Liste der Feature-Punkte
+        self.hist = hist  # Farb-Histogramm der Box
+        self.id = track_id  # Eindeutige ID
+        self.center = [(box[0] + box[2] // 2), (box[1] + box[3] // 2)]  # Mittelpunkt der Box
+        self.mean_shift = [np.array([0, 0])]  # Bewegungsgeschichte (Verschiebung)
+        self.trace = [[self.center]]  # Historie der Positionen
+        self.skipped_frames = 0  # Anzahl der Frames, in denen das Objekt nicht detektiert wurde
+        self.lost = False  # Status, ob das Objekt als verloren gilt
+        self.hog_descriptor = hog_deskriptor  # HOG-Deskriptor
+        self.ref_box = None  # Referenz-Bounding-Box
+        self.non_detects = 0  # Anzahl der Nicht-Detektionen
+
+
+    def draw_track(self, frame):
+        """
+        Zeichnet die Historie der Positionen des Objekts in das Bild ein.
+
+        Args:
+            frame (numpy.ndarray): Das Bild, in das die Historie eingezeichnet werden soll.
+        """
+        # Zeichne die Historie der Positionen der Person im Video
+        for i in range(1, len(self.trace)):
+            # Hole die Positionen der aktuellen und der vorherigen Frame
+            prev_center = self.trace[i - 1][0]
+            curr_center = self.trace[i][0]
+            curr_center[0] = int(curr_center[0])
+            curr_center[1] = int(curr_center[1])
+
+            prev_center = tuple(prev_center) if isinstance(prev_center, list) else prev_center
+            curr_center = tuple(curr_center) if isinstance(curr_center, list) else curr_center
+
+            # Zeichne eine Linie von der vorherigen Position zur aktuellen Position
+            cv.line(frame, prev_center, curr_center, (255 // self.id, 0, 255 // self.id), 2)
 
     @staticmethod
-    def _filter_valid_points(p1, st, features, fgmask):  # Nur Punkte in Roi werden als valid eingestuft
-        valid_points = p1[st == 1].reshape(-1, 2)
-        previous_points = features[st == 1].reshape(-1, 2)
-        mask_filter = [  # +25
-            not np.all(fgmask[int(p[1]):int(p[1]) + 5, int(p[0]):int(p[0]) + 5] == 0) for p in valid_points
-        ]
-        return valid_points[mask_filter], previous_points[mask_filter]
+    def draw_meanshift_vector(vis, box, shift):
+        """
+        Zeichnet den Mean-Shift-Vektor eines Tracks in das Bild ein.
 
-    def virtual_movement(self):
-        print("VIRT")
-        if len(self.last_partial_virt_box_tracks) > 0:
-            for track in self.last_partial_virt_box_tracks:
-                x, y, w, h = track["box"]
-                x = np.int32(x + np.mean([shift[0] for shift in track["mean_shift"]]) * 2)
-                track["box"] = (x, y, w, h)
-                track["center"] = [(x + (w // 2)), (y + (h // 2))]
-            self.last_box_tracks = self.last_partial_virt_box_tracks.copy()
-            self.last_partial_virt_box_tracks = []
-        else:
-            for track in self.last_box_tracks:
-                x, y, w, h = track["box"]
-                x = np.int32(x + np.mean([shift[0] for shift in track["mean_shift"]]) * 2)
-                # y = np.int32(y + track["mean_shift"][1]) # Y-nicht
-                track["box"] = (x, y, w, h)
-                track["center"] = [(x + (w // 2)), (y + (h // 2))]
+        Args:
+            vis (numpy.ndarray): Das Bild, in das der Vektor eingezeichnet werden soll.
+            box (tuple): Die Bounding-Box des Tracks (x, y, Breite, Höhe).
+            shift (numpy.ndarray): Der Mean-Shift-Vektor.
+        """
+        if vis is not None:
+            x, y, w, h = box
+            cv.arrowedLine(vis, (int(x + w // 2), int(y + h // 2)),
+                           (int(x + w // 2 + shift[0]), int(y + h // 2 + shift[1])),
+                           (0, 255, 0), 2)
 
-    def virtual_movement_partial(self, track, index, filtered_contours, box_center, vis,
-                                 valid_points, frame_counter, frame_gray, prev_mean_shift, mean_shift):
-        self.lock = 0
-        x, y, w, h = track["box"]
-        dx, dy, dw, dh = self.last_box_tracks[index]["box"]
+    def update(self, prev_gray, frame_gray, fgmask, contours, lk_params):
+        """
+        Aktualisiert die Eigenschaften des Tracks basierend auf dem optischen Fluss und anderen Merkmalen.
+
+        Args:
+            prev_gray (numpy.ndarray): Graustufenbild des vorherigen Frames.
+            frame_gray (numpy.ndarray): Graustufenbild des aktuellen Frames.
+            fgmask (numpy.ndarray): Vordergrundmaske.
+            contours (list): Liste der Konturen im aktuellen Frame.
+            lk_params (dict): Parameter für den optischen Fluss (Lucas-Kanade).
+        """
+
+        buffer = 20
         alpha = 0.15
+        x, y, w, h = self.box
 
-        track["box"] = (x, dy, w, dh)
-        track["center"] = [(x + (w // 2)), (dy + (dh // 2))]
+        # Berechne optischen Fluss
+        features = np.float32(self.features).reshape(-1, 1, 2)
+        p1, st, err = cv.calcOpticalFlowPyrLK(prev_gray, frame_gray, features, None, **lk_params)
+        p0, st0, err0 = cv.calcOpticalFlowPyrLK(frame_gray, prev_gray, p1, None, **lk_params)
 
-        valid_y_coords = np.float32(self.last_box_tracks[index]["features"]).reshape(-1, 1, 2).reshape(-1, 2)[:, 1]
-        valid_x_coords = np.float32(self.last_box_tracks[index]["features"]).reshape(-1, 1, 2).reshape(-1, 2)[:, 0]
-        min_y = int(np.min(valid_y_coords)) - 20
-        max_y = int(np.max(valid_y_coords)) + 20
-        min_x = int(np.min(valid_x_coords)) - 20
-        max_x = int(np.max(valid_x_coords)) + 20
+        # Filtere valide Punkte
+        valid_points, previous_points = self._filter_valid_points(p1, st, p0, fgmask, (x-40, y-40, w+80, h+80))
 
-        # Berechne dynamische Höhe basierend auf Feature-Punkten
-        dynamic_height = max(max_y - min_y, 50)
-        dynamic_width = max(max_x - min_x, 50)  # Breite bleibt stabil oder wird angepasst
+        if len(valid_points) >= 10:
 
-        if filtered_contours:
-            cv.drawContours(vis, filtered_contours, -1,
-                            (0, 255, 0), 2)
-            contour_centers = []
-            for contour in filtered_contours:
+            movement = valid_points - previous_points
 
-                M = cv.moments(contour)
-                cx = int(M["m10"] / (M["m00"] + 1e-5))  # x-Koordinate
-                cy = self.last_box_tracks[index]["center"][1]  # y-Koordinate
-                contour_centers.append((cx, cy))
+            mean_shift = np.mean(movement, axis=0)
+            historical_mean_shift = np.mean(self.mean_shift[-3:], axis=0) if len(self.mean_shift) > 3 else mean_shift
+            smooth_shift = 0.8 * mean_shift + 0.2 * historical_mean_shift
 
-            if contour_centers:
+            #self.draw_meanshift_vector(vis, self.box, smooth_shift)
 
-                distances = [np.linalg.norm(np.array(center) - box_center) for center in contour_centers]
+            # Box-Parameter aktualisieren
+            x, y, w, h = self.box
+            dx, dy = smooth_shift
+            box_center = np.array([x + dx + w // 2, y + dy + h // 2])
 
-                weights = 1 / (np.array(distances) + 1e-5)
-                weights /= np.sum(weights)
+            #self.draw_track(vis)
 
-                weighted_center = np.sum(np.array(contour_centers) * weights[:, None], axis=0)
+            # Neue dynamische Box berechnen
+            valid_y_coords = valid_points[:, 1]
+            valid_x_coords = valid_points[:, 0]
+            min_y = int(np.min(valid_y_coords)) - buffer
+            max_y = int(np.max(valid_y_coords)) + buffer
+            min_x = int(np.min(valid_x_coords)) - buffer
+            max_x = int(np.max(valid_x_coords)) + buffer
+            dynamic_height = min(max_y - min_y, self.ref_box[3])
+            dynamic_width = min(max_x - min_x, self.ref_box[2])
 
-                even_center = (1 - alpha) * box_center + alpha * weighted_center
-                new_x = int(even_center[0] - dynamic_width // 2)
-                new_y = int(even_center[1] - dynamic_height // 2)
+            if contours:
+                contour_centers = []
+                for contour in contours:
+                    M = cv.moments(contour)
+                    if M["m00"] != 0:
+                        cx = int(M["m10"] / M["m00"])
+                        cy = int(M["m01"] / M["m00"])
+                        if min_x <= cx <= min_x + dynamic_width and min_y <= cy <= min_y + dynamic_height:
+                            contour_centers.append((cx, cy))
 
-                self.updated_box_tracks.append({
-                    "box": (new_x, new_y, dynamic_width, dynamic_height),
-                    "features": valid_points.tolist() if frame_counter % 5 != 0 else
-                    self.reinitialize_features(
-                        frame_gray, (new_x, new_y, w, h), filtered_contours),
-                    "mean_shift": (
-                        prev_mean_shift := [[mean_shift[0], mean_shift[1]]] if prev_mean_shift is None or len(
-                            prev_mean_shift) > 25
-                        else prev_mean_shift + [[mean_shift[0], mean_shift[1]]]),
-                    "center": [new_x + dynamic_width // 2, new_y + dynamic_height // 2]
-                })
+                if contour_centers:
+                    distances = [np.linalg.norm(np.array(center) - box_center) for center in contour_centers]
+                    weights = 1 / (np.array(distances) + 1e-5)
+                    weights /= np.sum(weights)
+                    weighted_center = np.sum(np.array(contour_centers) * weights[:, None], axis=0)
 
-                self.last_partial_virt_box_tracks = self.updated_box_tracks.copy()
+                    even_center = (1 - alpha) * box_center + alpha * weighted_center
+                    new_x = int(even_center[0] - dynamic_width // 2)
+                    new_y = int(even_center[1] - dynamic_height // 2)
 
-    def check_virt(self, boxes, points, vis, height, width):
-        if len(boxes) <= 0 < len(self.last_box_tracks) and self.virt_frame_counter <= 50:
-            margin = 50  # Abstand vom Kamerarand in Pixeln
-            valid_tracks = []
-            for track in self.last_box_tracks:
-                x, y, w, h = track["box"]
-                # Bedingung: Box nicht in der Nähe des Randes
-                if x > margin and y > margin and (x + w) < (width - margin) and (y + h) < (
-                        height - margin):
-                    valid_tracks.append(track)  # Box ist gültig
-
-            if valid_tracks:  # Nur wenn es gültige Tracks gibt
-                self.last_box_tracks = valid_tracks
-                self.virtual_movement()
-                self.draw_features(vis, points, self.last_box_tracks)
-                self.draw_boxes(vis, self.last_box_tracks)
-                self.virt_frame_counter += 1
-
-    def init_new_tracks(self):  # Neue Tracks init
-
-        self.box_tracks = self.updated_box_tracks
-        if len(self.box_tracks) != 0 and self.lock:
-            self.last_box_tracks = self.updated_box_tracks
-        self.updated_box_tracks = []
-
-    def draw_boxes(self, vis, box_tracks):  # Boxen zeichnen
-        for track in box_tracks:
-            x, y, w, h = track["box"]
-            cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)
-
-    def draw_features(self, vis, features, box_tracks):  # Feature zeichnen
-        if features is not None:
-            for feature_list in features:
-                for i, point in enumerate(feature_list):
-                    cv.circle(vis, (int(point[0]), int(point[1])), 2, (0, 255, 0), -1)
-
-        if box_tracks is not None:
-            for track in box_tracks:
-                if track["center"] is not None:
-                    cv.circle(vis, (int(track["center"][0]), int(track["center"][1])), 2, (0, 0, 255), 2)
-
-
-class SingleObjectTrackingPipeline:
-    def __init__(self, video_path):
-        self.cap = cv.VideoCapture(video_path)
-        self.bgs = BGS()
-        self.detector = Detector()
-        self.tracker = Tracker()
-        self.iou_metrik = IoUMetrik(video_path)
-        self.prev_gray = None
-        self.width = self.cap.get(cv.CAP_PROP_FRAME_WIDTH)
-        self.height = self.cap.get(cv.CAP_PROP_FRAME_HEIGHT)
-
-
-        # Todo -- Nur für Metrik zwecke angelegt --
-        self.frame_counter = 0
-        self.detect_counter = 0
-        self.tracking_counter = 0
-        self.empty = 0
-
-    def run(self):
-
-        while True:
-            ret, frame = self.cap.read()
-            if not ret:
-                break
-
-            vis = frame.copy()
-            frame_gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
-            fgmask = self.bgs.bgs_apply(frame)
-            points = []
-
-            if len(self.tracker.box_tracks) < 1:
-
-                boxes = self.detector.detect(frame, fgmask)
-                self.tracker.init_tracks(boxes, frame_gray)
-
-                # -------------------------------------- TODO Nur für Metrik
-                if len(self.tracker.box_tracks) >= 1:
-                    self.detect_counter += 1
+                    new_box = (new_x, new_y, dynamic_width, dynamic_height)
                 else:
-                    self.empty += 1
-                # --------------------------------------
-                self.tracker.check_virt(boxes, points, vis, self.height, self.width)
-
+                    new_box = (x + dx, y + dy, w, h)
             else:
-                self.tracker.virt_frame_counter = 0
-                self.tracking_counter += 1
-                contours, _ = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-                points = self.tracker.update_tracks(self.prev_gray, frame_gray, fgmask, contours, self.frame_counter,
-                                                    vis)
-                self.tracker.init_new_tracks()
+                new_box = (x + dx, y + dy, w, h)
 
-            self.tracker.draw_features(vis, points, self.tracker.box_tracks)
-            self.tracker.draw_boxes(vis, self.tracker.box_tracks)
-            self.iou_metrik.get_iou_info(self.tracker.box_tracks, self.frame_counter)
-            self.frame_counter += 1
-            self.prev_gray = frame_gray
+            self.features = valid_points.tolist()
+            self.mean_shift.append(smooth_shift)
+            self.center = [(new_box[0] + new_box[2] // 2), (new_box[1] + new_box[3] // 2)]
+            self.trace.append([self.center])
 
-            cv.imshow('HOG', vis)
-            #cv.imshow('BG', fgmask)
-            key = cv.waitKey(10)
+            if not self.lost and new_box[2] * new_box[3] > self.ref_box[2] * self.ref_box[3] // 4:
+                self.box = new_box
+        else:
+            self.lost = True
 
-            if key & 0xFF == 27:
-                break
-
-            if key == ord('p'):
-                cv.waitKey(-1)
-
-        self.cap.release()
-        cv.destroyAllWindows()
-
-
-if __name__ == "__main__":
-    pipeline = SingleObjectTrackingPipeline('../../assets/videos/DS-Parkour-Tshirt-Hell-RL.mov')
-    pipeline.run()
-
-'''
-In die Pipeline Einbinden, falls bestimmte Funktionen nur auf die BoundingBox beschränkt werden sollen.
-
-# Erweiterungsparameter für die ROI
-padding = 20  # Erweiterung um 20 Pixel in alle Richtungen
-# Aktuelle Bounding-Box
-x, y, w, h = self.tracker.box_tracks[0]["box"]
-# Erweiterte ROI berechnen
-roi_x_start = max(0, x - padding)
-roi_y_start = max(0, y - padding)
-roi_x_end = min(fgmask.shape[1], x + w + padding)
-roi_y_end = min(fgmask.shape[0], y + h + padding)
-# Erweiterte ROI auf Vordergrundmaske anwenden
-roi = fgmask[roi_y_start:roi_y_end, roi_x_start:roi_x_end]
-'''
-
-"""max_K_height = cv.boundingRect(max(merge_contours(filtered_contours), key=cv.contourArea))[3]
-                    max_K_width = cv.boundingRect(max(merge_contours(filtered_contours), key=cv.contourArea))[2]
-
-                    if max_K_height + max_K_width <= 450:
-                        filtered_contours.clear()
-
-                    if filtered_contours:
-                        max_K_height = cv.boundingRect(max(merge_contours(filtered_contours), key=cv.contourArea))[3]
-                        max_K_width = cv.boundingRect(max(merge_contours(filtered_contours), key=cv.contourArea))[2]
-
-                        if max_K_height + max_K_width <= 450:
-                            # if max_K_height <= 75 or max_K_width <= 150:
-                            if max_K_height + max_K_width <= 350 and (max_K_height * 2.5 < max_K_width or max_K_height > max_K_width * 2.5):
-                                filtered_contours.clear()
-                            self.virtual_movement_feet(track, i, filtered_contours, box_center, vis, valid_points,
-                                                       frame_counter, frame_gray, prev_mean_shift, mean_shift)
-                            continue"""
-
-"""@staticmethod
+    @staticmethod
     def _filter_valid_points(p1, st, features, fgmask, box):
-        x, y, w, h = box
+        """
+        Filtert gültige Punkte basierend auf der Position und der Vordergrundmaske.
+
+        Args:
+            p1 (numpy.ndarray): Neue Positionen der Punkte.
+            st (numpy.ndarray): Status der Punkte (1 = valide, 0 = nicht valide).
+            features (numpy.ndarray): Ursprüngliche Positionen der Punkte.
+            fgmask (numpy.ndarray): Vordergrundmaske.
+            box (tuple): Bounding-Box, um die Punkte zu überprüfen.
+
+        Returns:
+            tuple: Gefilterte gültige Punkte und die entsprechenden vorherigen Punkte.
+        """
+
         valid_points = p1[st == 1].reshape(-1, 2)
         previous_points = features[st == 1].reshape(-1, 2)
 
-        box_filter = [
-            (x - 55 <= p[0] <= x + w + 55) and (y - 55 <= p[1] <= y + h + 55) for p in valid_points
+        x, y, w, h = box
+
+        points_within_box = [
+            (x <= p[0] <= x + w and y <= p[1] <= y + h) for p in valid_points
         ]
 
-        mask_filter = [  # +25
-            not np.all(fgmask[int(p[1]):int(p[1]) + 5, int(p[0]):int(p[0]) + 5] == 0) for p in valid_points
+        points_in_fg = [
+            not np.all(fgmask[int(p[1]):int(p[1]) + 25, int(p[0]):int(p[0]) + 25] == 0) for p in valid_points
         ]
 
-        combined_filter = np.array(box_filter) & np.array(mask_filter)
+        # Filter: Punkte müssen innerhalb der Box liegen und im Vordergrund sein
+        mask_filter = np.array(points_within_box, dtype=bool) & np.array(points_in_fg, dtype=bool)
 
-        return valid_points[combined_filter], previous_points[combined_filter]"""
+        return valid_points[mask_filter], previous_points[mask_filter]
