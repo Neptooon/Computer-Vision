@@ -111,7 +111,7 @@ class Bomb(pygame.sprite.Sprite):
                  y (int): Die y-Koordinate der Bombe.
                  bomb_type: Der Typ der Bombe (entspricht dem Schlüssel in BOMB_SPRITES).
                  player (str): Der Spieler, dem die Bombe zugeordnet ist.
-                 base_value (int): Der Basiswert der Bombe (abzuziehende Punkte).
+                 base_value (float): Der Basiswert der Bombe (abzuziehende Punkte).
                  multiplier (float): Der Multiplikator für die Bombe.
                  depth (float): Der Tiefenwert (steuert die Größe und Geschwindigkeit der Bombe).
         """

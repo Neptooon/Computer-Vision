@@ -7,7 +7,6 @@ Thema: pygame example with integrated OpenCV
 """
 
 import random
-
 import cv2 as cv
 import numpy as np
 import pygame

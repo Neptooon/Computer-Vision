@@ -117,7 +117,7 @@ class ObjectGenerator:
             bomb = Objects.Bomb(
                 random.randint(int(0), int(self.screen_width)), 0,
                 bomb_type, player,
-                random.uniform(5, 20), random.uniform(2.0, 10.0), depth=depth
+                random.uniform(5.0, 20.0), random.uniform(2.0, 10.0), depth=depth
             )  # Bomben Spawn
             return bomb
         return None
