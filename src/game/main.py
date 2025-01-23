@@ -16,11 +16,6 @@ import overlay as Overlay
 from src.cv_modules.main import MultipleObjectTrackingPipeline
 
 
-#SCREEN_WIDTH = 1280
-#SCREEN_WIDTH = cv.CAP_PROP_FRAME_WIDTH
-#SCREEN_HEIGHT = 720
-#SCREEN_HEIGHT = cv.CAP_PROP_FRAME_HEIGHT
-
 class Player(pygame.sprite.Sprite):
     # init class
     def __init__(self,name):
@@ -29,7 +24,7 @@ class Player(pygame.sprite.Sprite):
         self.rect = self.surf.get_rect()
         # start at screen center
         self.image = self.surf
-        self.health = 1
+        self.health = 11
         self.score = 0
         self.name = name
         self.activated = False
@@ -37,30 +32,33 @@ class Player(pygame.sprite.Sprite):
 
     # updated die bbox
     def update_box_position(self, track):
-        x, y, w, h = track.box
-        x = int(x)
-        y = int(y)
-        w = int(w)
-        h = int(h)
-        self.rect.update(x, y, w, h)
-        self.surf = pygame.Surface((w, h), pygame.SRCALPHA)
-        if track.id == 1:
-            pygame.draw.rect(self.surf, (0, 0, 255), (0, 0, w, h), 6)  # Grünen Rahmen zeichnen
+        if not track.lost:
+            x, y, w, h = track.box
+            x = int(x)
+            y = int(y)
+            w = int(w)
+            h = int(h)
+            self.rect.update(x, y, w, h)
+            self.surf = pygame.Surface((w, h), pygame.SRCALPHA)
+            if track.id == 1:
+                pygame.draw.rect(self.surf, (0, 0, 255), (0, 0, w, h), 6)  # Blauen Rahmen zeichnen
+            else:
+                pygame.draw.rect(self.surf, (255, 0, 0), (0, 0, w, h), 6)  # Roten Rahmen zeichnen
+            font = pygame.font.Font(None, 36)
+            text = font.render(str(track.id), True, (0, 0, 0))
+            self.surf.blit(text, (5, 5))
+
+            self.image = self.surf
         else:
-            pygame.draw.rect(self.surf, (255, 0, 0), (0, 0, w, h), 6)  # Grünen Rahmen zeichnen
-        font = pygame.font.Font(None, 36)
-        text = font.render(str(track.id), True, (0, 0, 0))
+            # BoundingBox entfernen
+            self.rect.update(0, 0, 0, 0)
+            self.surf = pygame.Surface((0, 0), pygame.SRCALPHA)
+            self.image = self.surf
 
-
-        self.surf.blit(text, (5,5))
-
-        self.image = self.surf
-
-    # Checked die tracks und leitet die bbox weiter
+    # updated den Spieler mit der jeweiligen Box des zugehörigen Tracks
     def update(self, track):
         if track.box is not None:
             self.update_box_position(track)
-
 
     # Spieler catched frucht
     def catch_fruit(self, fruit):
@@ -85,13 +83,10 @@ fps = 60
 clock = pygame.time.Clock()
 
 # opencv - init webcam capture & set width & height
-cap = cv.VideoCapture('../../assets/videos/MOT-Livedemo1.mov')
+cap = cv.VideoCapture('../../assets/videos/MOT-Livedemo2.mov')
 SCREEN_WIDTH = cap.get(cv.CAP_PROP_FRAME_WIDTH)
 SCREEN_HEIGHT = cap.get(cv.CAP_PROP_FRAME_HEIGHT)
 screen = pygame.display.set_mode([SCREEN_WIDTH,SCREEN_HEIGHT])
-
-#cap.set(cv.CAP_PROP_FRAME_WIDTH, screen.get_width())
-#cap.set(cv.CAP_PROP_FRAME_HEIGHT, screen.get_height())
 
 
 def start_game(): # Startet Spieltimer
@@ -99,7 +94,7 @@ def start_game(): # Startet Spieltimer
     return pygame.time.get_ticks()
 
 
-def stop_game(player): # Stop Game / Game Over für den übergebenen Spieler
+def stop_game(player):  # Stop Game / Game Over für den übergebenen Spieler
     Overlay.draw_game_over(screen)
 
     waiting = True
@@ -121,6 +116,7 @@ def main():
     Overlay.draw_countdown(screen)
 
     start_time = start_game()
+
 
 
     player1 = Player('Player1')
@@ -171,10 +167,10 @@ def main():
         screen.blit(gameFrame, (0, 0))
 
         for track in pipeline.tracker.tracks:
-            if track.id == 1 and not track.lost:
+            if track.id == 1:
                 player1.update(track)  # Spieler Updaten
                 player1.activated = True
-            elif track.id == 2 and not track.lost:
+            elif track.id == 2:
                 player2.update(track)  # Spieler Updaten
                 player2.activated = True
 
@@ -184,8 +180,9 @@ def main():
         if new_fruit:
             fruits.add(new_fruit)
 
-        new_bomb = generator.generate_bomb(random.choice(list(players)))
-        if new_bomb:
+        player_choice = random.choice(list(players))
+        new_bomb = generator.generate_bomb(player_choice if player_choice.activated else None)
+        if new_bomb is not None:
             bombs.add(new_bomb)
 
         # Früchte und Bomben bewegen updaten etc.
@@ -230,7 +227,6 @@ def main():
     # quit
     pygame.quit()
     cap.release()
-
 
 
 if __name__ == "__main__":

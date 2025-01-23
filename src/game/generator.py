@@ -65,6 +65,9 @@ class ObjectGenerator:
         return None
 
     def generate_bomb(self, player):
+
+        if player is None:
+            return
         # Bomben spielerspezifisch generieren
         self.update_spawn_intervals()  # Spawn-Zeiten update
 

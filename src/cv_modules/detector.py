@@ -1,25 +1,42 @@
 import cv2 as cv
 import numpy as np
 
-from imutils.object_detection import non_max_suppression
+class Detector:
+    """
+    Klasse zur Objektdetektion von Personen.
+    Diese Klasse verwendet den vortrainierten HOG-Personendetektor von OpenCV.
+    """
 
-class Detector: # Detektor
-    def __init__(self): # Hog-Deskriptor
-        self.hog = cv.HOGDescriptor()
-        self.hog.setSVMDetector(cv.HOGDescriptor_getDefaultPeopleDetector())
+    def __init__(self):
+        """
+        Initialisiert die Detector-Klasse und konfiguriert den HOG-Deskriptor mit einem vortrainierten Personendetektor.
+        """
+        self.hog = cv.HOGDescriptor()  # HOG-Deskriptor initialisieren
+        self.hog.setSVMDetector(cv.HOGDescriptor_getDefaultPeopleDetector())  # Vortrainierten Personendetektor laden
 
+    def detect(self, frame):
+        """
+        Führt die Objektdetektion in einem gegebenen Frame durch.
 
-    def detect(self, frame, fgmask):  # Detektiert Boxen und filtert die beste
+        Args:
+            frame (numpy.ndarray): Das Eingabebild, in dem Objekte erkannt werden sollen.
 
-        # Frame Down Samplen für schnellere Berechnung
+        Returns:
+            numpy.ndarray: Ein Array von Bounding-Boxen für die erkannten Objekte.
+        """
+        # Reduzierung der Bildgröße für schnellere Berechnung
         frame_down_sample = cv.resize(frame, ((frame.shape[1] // 40) * 10, (frame.shape[0] // 40) * 10))
-        boxes, weights = self.hog.detectMultiScale(frame_down_sample, winStride=(2, 2), padding=(4, 4),
-                                                   scale=1.07, useMeanshiftGrouping=True)  # Je geringer das Scaling, desto weniger Boxen aber schneller
 
-        #rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in boxes])
+        # HOG-basierte Detektion von Objekten im Bild
+        boxes, weights = self.hog.detectMultiScale(
+            frame_down_sample,
+            winStride=(2, 2),  # Schrittgröße für das Fenster
+            padding=(4, 4),  # Padding um das Detektionsfenster
+            scale=1.07,  # Skalierungsfaktor zwischen den Bildpyramidenebenen
+            useMeanshiftGrouping=True  # Gruppieren von überlappenden Boxen
+        )
 
-        pick = non_max_suppression(boxes, probs=None, overlapThresh=0.6) # 0.3 TODO Kann dazu führen das bei nur 1 person die box detektiert wird wenn nahe aneinander
-        boxes = np.divide(boxes * 40, 10).astype(int)  # Up-sampling der Koordinaten
+        # Skalieren der Koordinaten zurück auf die Originalbildgröße
+        boxes = np.divide(boxes * 40, 10).astype(int)
+
         return boxes
-
-
